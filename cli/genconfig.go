@@ -26,11 +26,11 @@ const (
 
 type config struct {
 	// Dir is the directory containing the certificate specs.
-	Dir string `json:"certspecs" yaml:"certspecs"`
+	Dir string `json:"dir" yaml:"dir"`
 
 	// ServiceManager is the service manager used to restart a
 	// service.
-	ServiceManager string `json:"service_manager" yaml:"service_manager"`
+	ServiceManager string `json:"svcmgr" yaml:"svcmgr"`
 
 	// Before is how long before the cert expires to start
 	// attempting to renew it.
