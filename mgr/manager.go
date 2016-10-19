@@ -129,7 +129,6 @@ func setup(m *Manager) (*Manager, error) {
 		}
 	}
 
-	log.Warning("manager: default remote is ", m.DefaultRemote)
 	return m, nil
 }
 
@@ -178,6 +177,7 @@ func (m *Manager) Load() error {
 		}
 
 		m.Certs = append(m.Certs, cert)
+		metrics.WatchCount.Inc()
 		return nil
 	}
 
@@ -304,6 +304,73 @@ func (m *Manager) SetExpiresNext() {
 	}
 }
 
+// The maximum number of attempts before putting the cert back on the
+// queue.
+const maxAttempts = 5
+
+func (m *Manager) renewCert(cert *cert.Spec) error {
+	start := time.Now()
+	for attempts := 0; attempts < maxAttempts; attempts++ {
+		log.Infof("manager: processing certificate spec %s (attempt %d)", cert, attempts+1)
+		err := cert.RefreshKeys()
+		if err != nil {
+			if isAuthError(err) {
+				// Killing the server is really the
+				// only valid option here; it will
+				// force an investigation into why the
+				// auth key is bad.
+				log.Fatalf("invalid auth key in certificate spec %s", cert.Path)
+			}
+			backoff := cert.Backoff()
+			log.Warningf("manager: failed to renew certificate (err=%s), backing off for %0.0f seconds", err, backoff.Seconds())
+			metrics.FailureCount.Inc()
+			time.Sleep(backoff)
+			continue
+		}
+
+		cert.ResetBackoff()
+		return nil
+	}
+	stop := time.Now()
+
+	cert.ResetBackoff()
+	return fmt.Errorf("manager: failed to renew %s in %d attempts (in %0.0f seconds)", cert, maxAttempts, stop.Sub(start).Seconds())
+}
+
+// refreshKeys attempts to renew the certificate, perform any service
+// management functions required, and update the metrics as needed.
+func (m *Manager) refreshKeys(cert *cert.Spec) {
+	err := m.renewCert(cert)
+	if err != nil {
+		m.renew <- cert
+		log.Errorf("manager: failed to renew %s; requeuing cert", cert)
+		return
+	}
+
+	metrics.QueueCount.Dec()
+	switch cert.Action {
+	case "restart":
+		err = m.serviceManager.RestartService(cert.Service)
+	case "reload":
+		err = m.serviceManager.ReloadService(cert.Service)
+	default:
+		// Nothing to do here.
+	}
+
+	// Even though there was an error managing the service
+	// associated with the certificate, the certificate has been
+	// renewed.
+	if err != nil {
+		log.Errorf("manager: failed to %s service %s (err=%s)",
+			cert.Action, cert.Service, err)
+	}
+
+	cert.Dequeue()
+	log.Info("manager: certificate successfully processed")
+
+	m.SetExpiresNext()
+}
+
 // ProcessQueue retrieves certificates from the renewal queue and
 // attempts to renew them. It is intended to be run as a goroutine.
 func (m *Manager) ProcessQueue() {
@@ -314,41 +381,13 @@ func (m *Manager) ProcessQueue() {
 			return
 		}
 
-		log.Info("manager: processing certificate spec ", cert)
-		err := cert.RefreshKeys()
-		if err != nil {
-			log.Warningf("manager: failed to renew certificate (err=%s)", err)
-			m.renew <- cert
-			metrics.FailureCount.Inc()
-			continue
-		}
-
-		metrics.QueueCount.Dec()
-		switch cert.Action {
-		case "restart":
-			err = m.serviceManager.RestartService(cert.Service)
-		case "reload":
-			err = m.serviceManager.ReloadService(cert.Service)
-		default:
-			// Nothing to do here.
-		}
-
-		if err != nil {
-			log.Errorf("manager: failed to %s service %s (err=%s)",
-				cert.Action, cert.Service, err)
-		}
-
-		cert.Dequeue()
-		log.Info("manager: certificate successfully processed")
-
-		m.SetExpiresNext()
+		go m.refreshKeys(cert)
 	}
 }
 
 // Server runs the Manager server. If sync is true, the first pass
 // will be synchronous. It will autostart the renewal queue.
 func (m *Manager) Server(sync bool) {
-	log.Info("manager: starting certificate manager server")
 	// NB: this loop could be more intelligent; for example,
 	// updating the next expiration independently of checking
 	// certificates.

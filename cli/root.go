@@ -13,7 +13,7 @@ import (
 
 var cfgFile string
 var logLevel string
-var sync bool
+var debug, sync bool
 
 var manager struct {
 	Dir            string
@@ -42,7 +42,12 @@ func root(cmd *cobra.Command, args []string) {
 		log.Fatalf("certmgr: %s", err)
 	}
 
-	metrics.Start(viper.GetString("metrics_address"), viper.GetString("metrics_port"))
+	metrics.Start(
+		viper.GetString("metrics_address"),
+		viper.GetString("metrics_port"),
+		viper.GetString("index_extra_html"),
+		mgr.Certs,
+	)
 	mgr.Server(sync)
 }
 
@@ -67,12 +72,14 @@ func init() {
 	RootCmd.PersistentFlags().StringVarP(&manager.Dir, "dir", "d", "", "directory containing certificate specs")
 	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", "service manager (one of systemd, sysv, or circus)")
 	RootCmd.PersistentFlags().StringVarP(&manager.Before, "before", "t", "", "how long before certificates expire to start renewing (in the form Nh)")
+	RootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug mode")
 	RootCmd.Flags().BoolVarP(&sync, "sync", "s", false, "the first certificate check should be synchronous")
 	RootCmd.Flags().MarkHidden("sync")
 
 	viper.BindPFlag("dir", RootCmd.PersistentFlags().Lookup("dir"))
 	viper.BindPFlag("svcmgr", RootCmd.PersistentFlags().Lookup("svcmgr"))
 	viper.BindPFlag("before", RootCmd.PersistentFlags().Lookup("before"))
+	viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -86,10 +93,16 @@ func initConfig() {
 
 	viper.SetEnvPrefix("CERTMGR")
 	viper.AutomaticEnv() // read in environment variables that match
-	viper.SetDefault("loglevel", "info")
+
+	viper.SetDefault("index_extra_html", "")
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
 		log.Info("certmgr: loading from config file ", viper.ConfigFileUsed())
+	}
+
+	if debug {
+		log.Level = log.LevelDebug
+		log.Debug("debug mode enabled")
 	}
 }

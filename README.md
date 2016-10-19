@@ -20,18 +20,34 @@ When run without any subcommands, certmgr will start monitoring
 certificates. The configuration and specifications can be validated
 using the `check` subcommand.
 
-## Prometheus metrics
+## Web server
 
-When appropriately configured, `certmgr` will start a Prometheus
-endpoint on "/". It exports the following metrics:
+When appropriately configured, `certmgr` will start a web server that
+has the following endpoints:
 
+* `/` is a basic overview page with links to the other endpoints and a
+  snapshot of the current metrics values.
+* `/metrics` is the Prometheus endpoint (see the Metrics section).
+* `/debug/pprof` is a
+  [net/http/pprof](https://golang.org/pkg/net/http/pprof/) endpoint.
+
+In the configuration file, the `index_extra_html` may contain HTML
+that will be inserted at the top of the file, after the server start
+time and current host:port.
+
+## Metrics
+
+The following metrics are collected by Prometheus:
+
+* `cert_watching` (counter): this is the number of certificates being
+  watched by certmgr.
 * `cert_renewal_queue` (gauge): this is the current number of
   certificates waiting to be renewed.
 * `cert_next_expires` (gauge): this contains the number of hours to
   the next certificate expiration.
 * `cert_renewal_failures` (counter): this counts the number of
   failures to renew a certificate.
-  
+
 ## certmgr.yaml
 
 The configuration file is a YAML file; it is expected to be in
@@ -50,6 +66,16 @@ interval: 30m
 metrics_port: 8080
 metrics_address: localhost
 
+index_extra_html: |
+  <hr>
+  <p>Links:</p>
+  <ul>
+    <li><strong><a href="https://internal.corp/sys/certmgr/runbook">Service runbook</a></strong></li>
+	<li><a href="https://internal.corp/sys/certmgr">Component homepage</a></li>
+	<li><a href="https://internal.corp/sys/ca">Internal CA documentation</a></li>
+	<li><a href="https://certs.prometheus.internal.corp/alerts">Current TLS-related alerts</a></li>
+  </ul>
+  <hr>
 ```
 
 This contains all of the currently available parameters:
@@ -65,6 +91,8 @@ This contains all of the currently available parameters:
 * `metrics_address`: specifies the address for the Prometheus HTTP
   endpoint.
 * `metrics_port`: specifies the port for the Prometheus HTTP endpoint.
+* `index_extra_html`: specifies additional links that may be
+  site-specific (such as the runbook) for the service index page.
 
 ## Certificate Specs
 
@@ -133,7 +161,7 @@ File specifications contain the following fields:
   of the current user is used.
 * `mode`: this is optional; if it's not provided, "0644" will be
   used. It should be a numeric file mode.
-  
+
 CFSSL certificate requests have the following fields:
 
 * `CN`: this contains the common name for the certificate.
@@ -146,7 +174,7 @@ CFSSL certificate requests have the following fields:
 * `names`: contains PKIX name information, including the "C"
   (country), "ST" (state), "L" (locality/city), "O" (organisation),
   and "OU" (organisational unit) fields.
-  
+
 The CA specification contains the following fields:
 
 * `remote`: the CA to use. If not provided, the default remote from
