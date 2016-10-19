@@ -6,11 +6,14 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v1"
 
 	"github.com/cloudflare/cfssl/csr"
 	"github.com/cloudflare/cfssl/log"
@@ -64,14 +67,31 @@ func displayName(name pkix.Name) string {
 // certificate.
 type Spec struct {
 	// The service is the service that uses this certificate. If
-	// this field is not empty, the service will be restarted upon
-	// certificate renewal.
-	Service string                  `json:"service"`
-	Action  string                  `json:"action"`
-	Request *csr.CertificateRequest `json:"request"`
-	Key     *File                   `json:"private_key"`
-	Cert    *File                   `json:"certificate"`
-	CA      CA                      `json:"authority"`
+	// this field is not empty, the action below will be applied
+	// to this service upon certificate renewal. It can also be
+	// used to describe what this certificate is for.
+	Service string `json:"service" yaml:"service"`
+
+	// Action is one of empty, "nop", "reload", or "restart" (see
+	// the svcmgr package for details).
+	Action string `json:"action" yaml:"action"`
+
+	// Request contains the CSR metadata needed to request a
+	// certificate.
+	Request *csr.CertificateRequest `json:"request" yaml:"request"`
+
+	// Key contains the file metadata for the private key.
+	Key *File `json:"private_key" yaml:"private_key"`
+
+	// Cert contains the file metadata for the certificate.
+	Cert *File `json:"certificate" yaml:"certificate"`
+
+	// CA specifies the certificate authority that should be used.
+	CA CA `json:"authority" yaml:"authority"`
+
+	// Path points to the on-disk location of the certificate
+	// spec.
+	Path string
 
 	queued  bool
 	expires time.Time
@@ -129,8 +149,7 @@ func (spec *Spec) Identity() *core.Identity {
 	return ident
 }
 
-// Load reads a spec from a JSON configuration file.
-func Load(path, remote string, before time.Duration) (*Spec, error) {
+func readCertFile(path string) (*Spec, error) {
 	in, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -138,15 +157,34 @@ func Load(path, remote string, before time.Duration) (*Spec, error) {
 
 	var spec = &Spec{
 		Request: csr.New(),
+		Path:    path,
 	}
 
-	err = json.Unmarshal(in, spec)
+	switch filepath.Ext(path) {
+	case ".json":
+		err = json.Unmarshal(in, &spec)
+	case ".yml", ".yaml":
+		err = yaml.Unmarshal(in, &spec)
+	default:
+		err = fmt.Errorf("cert: unrecognised spec file format for %s", path)
+	}
+
+	return spec, err
+}
+
+// Load reads a spec from a JSON configuration file.
+func Load(path, remote string, before time.Duration) (*Spec, error) {
+	spec, err := readCertFile(path)
 	if err != nil {
 		return nil, err
 	}
 
 	if spec.CA.Remote == "" {
 		spec.CA.Remote = remote
+	}
+
+	if spec.CA.Remote == "" {
+		return nil, errors.New("cert: no remote specified in authority (either in the spec or in the certmgr config)")
 	}
 
 	err = spec.Key.parse("private_key")
@@ -248,4 +286,14 @@ func (spec *Spec) IsQueued() bool {
 // queue.
 func (spec *Spec) Dequeue() {
 	spec.queued = false
+}
+
+// Backoff returns the backoff delay.
+func (spec *Spec) Backoff() time.Duration {
+	return spec.tr.Backoff.Duration()
+}
+
+// ResetBackoff resets the spec's backoff.
+func (spec *Spec) ResetBackoff() {
+	spec.tr.Backoff.Reset()
 }
