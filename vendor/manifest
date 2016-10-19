@@ -165,7 +165,7 @@
 			"importpath": "github.com/cloudflare/cfssl/transport",
 			"repository": "https://github.com/cloudflare/cfssl",
 			"vcs": "git",
-			"revision": "92f8f790e399013e94433e60966f3b113be06c07",
+			"revision": "0fc38e122c6a957deb3bc4e45a6400bb49d1b34c",
 			"branch": "master",
 			"path": "/transport",
 			"notests": true
