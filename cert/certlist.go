@@ -30,7 +30,5 @@ func (cl List) Less(i, j int) bool {
 
 // Swap swaps the elements with indexes i and j.
 func (cl List) Swap(i, j int) {
-	tmp := cl[i]
-	cl[i] = cl[j]
-	cl[j] = tmp
+	cl[i], cl[j] = cl[j], cl[i]
 }

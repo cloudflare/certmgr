@@ -21,6 +21,8 @@ type File struct {
 	mode     os.FileMode
 }
 
+// the usage of this function with hint in cert.go is a little
+// confusing
 func (f *File) parse(hint string) (err error) {
 	if f.Path == "" {
 		return fmt.Errorf("cert: missing path for %s", hint)
