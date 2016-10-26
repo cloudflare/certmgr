@@ -166,3 +166,7 @@ specified:
   by the certificate specs.
 * `genconfig`: generates a default configuration file and ensures the
   default service directory exists.
+
+## See also
+
+The `certmgr` spec is included as `SPEC.rst`.
