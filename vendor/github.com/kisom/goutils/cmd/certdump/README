@@ -1,0 +1,144 @@
+certdump
+
+Dump a PEM file containing certificates.
+
+It takes a number of files on the command line which should contain
+at least one certificate, and dumps the certificates found in those
+files. If the -l flag is given, it is assumed the file is a bundle and
+only the leaf certificate will be shown.
+
+Certificates may also be passed on standard input; no arguments, or a
+single "-" argument, inform certdump that it should read certificates
+from standard input. This allows chaining, à la
+
+	cfssl bundle -domain example.net | jq .bundle | certdump
+
+Example (kyleisom.pem and tyrfingr.pem are the bundled certificates
+for two of my sites):
+
+$ certdump *.pem
+--kyleisom.pem ---
+CERTIFICATE
+Subject: /*.kyleisom.net/OU=Domain Control Validated/OU=PositiveSSL Wildcard
+Issuer: /COMODO RSA Domain Validation Secure Server CA/C=GB/O=COMODO CA
+    Limited/L=Salford/ST=Greater Manchester
+	Signature algorithm: RSA / SHA256
+Details:
+	Public key: RSA-2048
+	Serial number: 140424811868659069090147614569911695367
+	AKI: 90:AF:6A:3A:94:5A:0B:D8:90:EA:12:56:73:DF:43:B4:3A:28:DA:E7
+	SKI: 64:07:29:EA:3A:FE:2C:00:48:62:FB:22:E4:E9:72:7E:2F:0F:C3:2D
+	Valid from: 2014-11-16T00:00:00+0000
+	     until: 2015-11-16T23:59:59+0000
+	Key usages: key encipherment, digital signature
+	Extended usages: server auth, client auth
+	Basic constraints: valid
+	SANs: *.kyleisom.net, kyleisom.net
+CERTIFICATE
+Subject: /COMODO RSA Domain Validation Secure Server CA/C=GB/O=COMODO CA
+    Limited/L=Salford/ST=Greater Manchester
+Issuer: /COMODO RSA Certification Authority/C=GB/O=COMODO CA
+    Limited/L=Salford/ST=Greater Manchester
+	Signature algorithm: RSA / SHA384
+Details:
+	Public key: RSA-2048
+	Serial number: 57397899145990363081023081275480378375
+	AKI: BB:AF:7E:02:3D:FA:A6:F1:3C:84:8E:AD:EE:38:98:EC:D9:32:32:D4
+	SKI: 90:AF:6A:3A:94:5A:0B:D8:90:EA:12:56:73:DF:43:B4:3A:28:DA:E7
+	Valid from: 2014-02-12T00:00:00+0000
+	     until: 2029-02-11T23:59:59+0000
+	Key usages: cert sign, crl sign, digital signature
+	Extended usages: server auth, client auth
+	Basic constraints: valid, is a CA certificate, max path length 0
+	SANs:
+---tyrfingr.pem ---
+CERTIFICATE
+Subject: /*.tyrfingr.is/OU=Domain Control Validated/OU=PositiveSSL Wildcard
+Issuer: /COMODO RSA Domain Validation Secure Server CA/C=GB/O=COMODO CA
+    Limited/L=Salford/ST=Greater Manchester
+        Signature algorithm: RSA / SHA256
+Details:
+        Public key: RSA-2048
+        Serial number: 129805972439942088783496286074667556011
+        AKI: 90:AF:6A:3A:94:5A:0B:D8:90:EA:12:56:73:DF:43:B4:3A:28:DA:E7
+        SKI: C6:25:79:D7:A7:9A:85:BE:7F:DE:3B:3D:7A:B7:2E:96:DE:46:05:D7
+        Valid from: 2014-10-03T00:00:00+0000
+             until: 2015-10-03T23:59:59+0000
+        Key usages: key encipherment, digital signature
+        Extended usages: server auth, client auth
+        Basic constraints: valid
+        SANs: *.tyrfingr.is, tyrfingr.is
+CERTIFICATE
+Subject: /COMODO RSA Domain Validation Secure Server CA/C=GB/O=COMODO CA
+    Limited/L=Salford/ST=Greater Manchester
+Issuer: /COMODO RSA Certification Authority/C=GB/O=COMODO CA
+    Limited/L=Salford/ST=Greater Manchester
+        Signature algorithm: RSA / SHA384
+Details:
+        Public key: RSA-2048
+        Serial number: 57397899145990363081023081275480378375
+        AKI: BB:AF:7E:02:3D:FA:A6:F1:3C:84:8E:AD:EE:38:98:EC:D9:32:32:D4
+        SKI: 90:AF:6A:3A:94:5A:0B:D8:90:EA:12:56:73:DF:43:B4:3A:28:DA:E7
+        Valid from: 2014-02-12T00:00:00+0000
+             until: 2029-02-11T23:59:59+0000
+        Key usages: cert sign, digital signature, crl sign
+        Extended usages: server auth, client auth
+        Basic constraints: valid, is a CA certificate, max path length 0
+        SANs:
+CERTIFICATE
+Subject: /COMODO RSA Certification Authority/C=GB/O=COMODO CA
+    Limited/L=Salford/ST=Greater Manchester
+Issuer: /AddTrust External CA Root/C=SE/O=AddTrust AB/OU=AddTrust External TTP
+    Network
+        Signature algorithm: RSA / SHA384
+Details:
+        Public key: RSA-4096
+        Serial number: 52374340215108295845375962883522092578
+        AKI: AD:BD:98:7A:34:B4:26:F7:FA:C4:26:54:EF:03:BD:E0:24:CB:54:1A
+        SKI: BB:AF:7E:02:3D:FA:A6:F1:3C:84:8E:AD:EE:38:98:EC:D9:32:32:D4
+        Valid from: 2000-05-30T10:48:38+0000
+             until: 2020-05-30T10:48:38+0000
+        Key usages: digital signature, crl sign, cert sign
+        Basic constraints: valid, is a CA certificate
+        SANs:
+
+$ certdump *.pem
+--kyleisom.pem ---
+CERTIFICATE
+Subject: /*.kyleisom.net/OU=Domain Control Validated/OU=PositiveSSL Wildcard
+Issuer: /COMODO RSA Domain Validation Secure Server CA/C=GB/O=COMODO CA
+    Limited/L=Salford/ST=Greater Manchester
+	Signature algorithm: RSA / SHA256
+Details:
+	Public key: RSA-2048
+	Serial number: 140424811868659069090147614569911695367
+	AKI: 90:AF:6A:3A:94:5A:0B:D8:90:EA:12:56:73:DF:43:B4:3A:28:DA:E7
+	SKI: 64:07:29:EA:3A:FE:2C:00:48:62:FB:22:E4:E9:72:7E:2F:0F:C3:2D
+	Valid from: 2014-11-16T00:00:00+0000
+	     until: 2015-11-16T23:59:59+0000
+	Key usages: digital signature, key encipherment
+	Extended usages: server auth, client auth
+	Basic constraints: valid
+	SANs: *.kyleisom.net, kyleisom.net
+--tyrfingr.pem ---
+CERTIFICATE
+Subject: /*.tyrfingr.is/OU=Domain Control Validated/OU=PositiveSSL Wildcard
+Issuer: /COMODO RSA Domain Validation Secure Server CA/C=GB/O=COMODO CA
+    Limited/L=Salford/ST=Greater Manchester
+	Signature algorithm: RSA / SHA256
+Details:
+	Public key: RSA-2048
+	Serial number: 129805972439942088783496286074667556011
+	AKI: 90:AF:6A:3A:94:5A:0B:D8:90:EA:12:56:73:DF:43:B4:3A:28:DA:E7
+	SKI: C6:25:79:D7:A7:9A:85:BE:7F:DE:3B:3D:7A:B7:2E:96:DE:46:05:D7
+	Valid from: 2014-10-03T00:00:00+0000
+	     until: 2015-10-03T23:59:59+0000
+	Key usages: digital signature, key encipherment
+	Extended usages: server auth, client auth
+	Basic constraints: valid
+	SANs: *.tyrfingr.is, tyrfingr.is
+
+This same result could be had with
+
+$ cfssl bundle -domain kyleisom.net | jq .bundle | certdump
+

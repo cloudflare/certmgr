@@ -1,0 +1,77 @@
+clustersh
+
+This is a program to run commands and transfer files between multiple
+servers over SSH.
+
+[ Usage ]
+	clustersh [-a addresses] [-c chunk] [-h] [-u user] command args
+
+[ Flags ]
+
+	-a addresses	The comma-separated list of servers to send
+                        to. There must not be any spaces in this list.
+
+	-c chunk	The size of chunks to transfer, in bytes. The
+			default is 16MB.
+
+	-u user		The SSH username to use. It must be the
+			same for all hosts. Defaults to the value
+			of the USER environment variable.
+
+[ Commands ]
+
+exec, run: run a command on the servers
+	The args list must be the command line to send to the hosts.
+
+upload, up, push, send: upload a file to the servers
+	The first argument is the local file to upload, and the second
+	is the filename to store it as on the remote.
+
+download, down, pull, fetch: download a file from the servers
+	The first argument is the filename to fetch.The second argument
+	is the base name for the local file. It will have a '-' and the
+	hostname appended.
+
+[ Examples ]
+
+Tailing syslog on the hosts "mesos-01," "mesos-02," and "mesos-03"
+with the same username as the logged in user:
+
+	$ clustersh -a mesos-01,mesos-02,mesos-03 tail /var/log/syslog
+	2015/12/22 20:37:17 waiting for sessions to complete
+	[mesos-02] Dec 22 23:37:20 mesos-02 chronos[1848]: [2015-12-22 23:37:20,325] INFO Declined unused offers with filter refuseSeconds=5.0 (use --decline_offer_duration to reconfigure) (org.apache.mesos.chronos.scheduler.mesos.MesosJobFramework:97)
+	[mesos-02] Dec 22 23:37:20 mesos-02 mesos-master[534]: I1222 23:37:20.326491   612 master.cpp:3297] Processing DECLINE call for offers: [ 07e0c918-efa9-48c3-9851-77abf0c95f92-O61048 ] for framework 07e0c918-efa9-48c3-9851-77abf0c95f92-0001 (chronos-2.4.0) at scheduler-c6926d5b-2e35-47d9-89fb-0a407234f0ba@159.203.201.212:48192
+	[mesos-02] Dec 22 23:37:20 mesos-02 mesos-master[534]: I1222 23:37:20.326786   612 hierarchical.cpp:744] Recovered cpus(*):1; mem(*):497; disk(*):14910; ports(*):[31000-32000] (total: cpus(*):1; mem(*):497; disk(*):14910; ports(*):[31000-32000], allocated: ) on slave 07e0c918-efa9-48c3-9851-77abf0c95f92-S78 from framework 07e0c918-efa9-48c3-9851-77abf0c95f92-0001
+	[mesos-01] Dec 22 23:37:19 mesos-01 marathon[1719]: [2015-12-22 23:37:19,045] INFO 73.189.108.122 - - [23/Dec/2015:04:37:19 +0000] "GET //mesos-01:8080/v2/deployments HTTP/1.1" 200 2 "http://mesos-01:8080/ui/" "Mozilla/5.0 (X11; Linux x86_64; rv:43.0) Gecko/20100101 Firefox/43.0 Iceweasel/43.0"  (mesosphere.chaos.http.ChaosRequestLog$$EnhancerByGuice$$f7252a53:qtp643328884-33)
+	[mesos-01] Dec 22 23:37:19 mesos-01 marathon[1719]: [2015-12-22 23:37:19,047] INFO 73.189.108.122 - - [23/Dec/2015:04:37:19 +0000] "GET //mesos-01:8080/v2/apps HTTP/1.1" 200 11 "http://mesos-01:8080/ui/" "Mozilla/5.0 (X11; Linux x86_64; rv:43.0) Gecko/20100101 Firefox/43.0 Iceweasel/43.0"  (mesosphere.chaos.http.ChaosRequestLog$$EnhancerByGuice$$f7252a53:qtp643328884-27)
+	[mesos-01] Dec 22 23:37:19 mesos-01 marathon[1719]: [2015-12-22 23:37:19,048] INFO 73.189.108.122 - - [23/Dec/2015:04:37:19 +0000] "GET //mesos-01:8080/v2/queue HTTP/1.1" 200 12 "http://mesos-01:8080/ui/" "Mozilla/5.0 (X11; Linux x86_64; rv:43.0) Gecko/20100101 Firefox/43.0 Iceweasel/43.0" 1 (mesosphere.chaos.http.ChaosRequestLog$$EnhancerByGuice$$f7252a53:qtp643328884-29)
+	[mesos-03] Dec 22 23:35:09 mesos-03 mesos-slave[2675]: I1222 23:35:09.231684  2692 slave.cpp:4039] Current disk usage 8.93%. Max allowed age: 5.674993196753403days
+	[mesos-03] Dec 22 23:36:09 mesos-03 mesos-slave[2675]: I1222 23:36:09.232365  2694 slave.cpp:4039] Current disk usage 8.93%. Max allowed age: 5.674993196753403days
+	[mesos-03] Dec 22 23:37:09 mesos-03 mesos-slave[2675]: I1222 23:37:09.232836  2691 slave.cpp:4039] Current disk usage 8.93%. Max allowed age: 5.674993196753403days
+
+Transferring the `clustersh` program to the same three hosts:
+
+	$ clustersh -a mesos-01,mesos-02,mesos-03 push clustersh clustersh
+	2015/12/22 20:39:23 waiting for sessions to complete
+	[mesos-02] wrote 6422688-byte chunk
+	[mesos-02] clustersh uploaded to clustersh
+	[mesos-03] wrote 6422688-byte chunk
+	[mesos-03] clustersh uploaded to clustersh
+	[mesos-01] wrote 6422688-byte chunk
+	[mesos-01] clustersh uploaded to clustersh
+
+Copying the `/var/log/mesos/marathon.log` file from each of the three hosts:
+
+	$ clustersh -a mesos-01,mesos-02,mesos-03 fetch /var/log/mesos/marathon.log marathon.log
+	2015/12/22 20:42:28 waiting for sessions to complete
+	[mesos-02] wrote 467461-byte chunk
+	[mesos-02] /var/log/mesos/marathon.log downloaded to marathon.log-mesos-02
+	[mesos-03] wrote 415850-byte chunk
+	[mesos-03] /var/log/mesos/marathon.log downloaded to marathon.log-mesos-03
+	[mesos-01] wrote 2940327-byte chunk
+	[mesos-01] /var/log/mesos/marathon.log downloaded to marathon.log-mesos-01
+	$ ls -1 marathon.log*
+	marathon.log-mesos-01
+	marathon.log-mesos-02
+	marathon.log-mesos-03
+

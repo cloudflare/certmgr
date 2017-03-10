@@ -1,0 +1,15 @@
+yamll: yaml linter
+
+Run this over YAML files to determine if they are well-formed or not.
+
+Usage: yamll [-hq] files...
+
+        For each file, yamll will make sure it is a well-formatted YAML
+        file.  Unless the -q option is passed, yamll will print the names
+        of each file and whether it was well-formed. With the -q option,
+        only malformed files are printed.
+
+	If the only command line argument is "-", yamll will read from
+	standard input. It is assumed the entirety of standard input is
+	a single file.
+

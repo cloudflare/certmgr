@@ -1,0 +1,14 @@
+pembody
+
+This is a utility for decoding PEM-encoded files and spewing their
+contents to standard output. No trailing newline is appended. If
+the filename is "-", pembody reads from standard input.
+
+Example:
+        $ cat file.pem
+        -----BEGIN TEST DATA-----
+        c2FtcGxlIGJpbmFyeSBkYXRh
+        -----END TEST DATA-----
+        $ pembody file.pem
+        sample binary data$
+        

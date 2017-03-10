@@ -1,0 +1,8 @@
+pem2bin
+
+This is a utility that strips the PEM-encoding from a file and dumps
+the binary body to disk. The resulting filename is the original pathname
+with ".bin" appended. Note that only the first PEM block in a file will
+be decoded.
+
+Usage: pem2bin paths*

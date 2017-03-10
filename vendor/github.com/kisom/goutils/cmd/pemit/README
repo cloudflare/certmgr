@@ -1,0 +1,41 @@
+pemit
+
+This is a utility to pem-encode data. It requires a PEM type to be
+specified via the `-t` flag. Any number of files may be specified on
+the command line; alternatively, if no arguments are provided or the
+only argument is "-", pemit will read from standard input.
+
+Example of standard input:
+	$ dd if=/dev/zero bs=32 count=1 | pemit -t "NULL DATA" 
+	1+0 records in
+	1+0 records out
+	32 bytes (32 B) copied, 8.8908e-05 s, 360 kB/s
+	-----BEGIN NULL DATA-----
+	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+	-----END NULL DATA-----
+	$ dd if=/dev/zero bs=32 count=1 | pemit -t "NULL DATA" -
+	1+0 records in
+	1+0 records out
+	32 bytes (32 B) copied, 3.1041e-05 s, 1.0 MB/s
+	-----BEGIN NULL DATA-----
+	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+	-----END NULL DATA-----
+
+Using files:
+        $ dd if=/dev/zero of=fileA bs=32 count=1
+	1+0 records in
+	1+0 records out
+	32 bytes (32 B) copied, 9.0908e-05 s, 352 kB/s
+        $ dd if=/dev/zero of=fileB bs=32 count=1
+	1+0 records in
+	1+0 records out
+	32 bytes (32 B) copied, 9.0908e-05 s, 352 kB/s
+	$ pemit -t NULL\ DATA fileA      
+	-----BEGIN NULL DATA-----
+	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+	-----END NULL DATA-----
+	$ pemit -t NULL\ DATA fileA fileB
+	-----BEGIN NULL DATA-----
+	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAAAAAAA==
+	-----END NULL DATA-----

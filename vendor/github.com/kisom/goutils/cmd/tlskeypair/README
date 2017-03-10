@@ -1,0 +1,17 @@
+tlskeypair
+
+This is a small utility that prints whether a certificate and private
+key correspond. Specify the private key file with -k and the
+certificate with -c.
+
+Example:
+
+	$ tlskeypair -k server.key -c server.pem
+	Match.
+	$ echo $?
+	0
+	$ tlskeypair -k server.key -c client.pem
+	No match (public keys don't match).
+
+
+

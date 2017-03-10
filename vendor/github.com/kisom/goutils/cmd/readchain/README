@@ -1,0 +1,20 @@
+readchain
+
+This is a small utility to read a chain of PEM-encoded X.509 certificates
+and print their common names. It was written to quickly see what certificates
+were in a bundle.
+
+It is called with the files containing chains to read passed in as an
+argument. The program has no knobs or widgets to adjust.
+
+Examples:
+
+	$ readchain google.com.pem microsoft.com.pem
+	[+] google.com.pem:
+	        *.google.com
+	        Google Internet Authority G2
+	        GeoTrust Global CA
+	[+] microsoft.com.pem:
+	        microsoft.com
+	        MSIT Machine Auth CA 2
+	        Microsoft Internet Authority
