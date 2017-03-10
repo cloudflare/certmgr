@@ -1,0 +1,45 @@
+certverify
+
+This is a small utility to verify a TLS X.509 certificate. It returns
+0 on success; on error, it prints the error and returns with exit code 1.
+It does not check for revocations (though this is a planned feature),
+and it does not check the hostname (it deals only in certificate files).
+
+[ Usage ]
+        certverify [-ca bundle] [-f] [-i bundle] [-r] [-v] certificate
+
+[ Flags ]
+        -ca bundle      Specify the path to the CA certificate bundle
+                        to use.
+        -f              Force the use of the intermediate bundle, ignoring
+                        any intermediates bundled with the certificate.
+        -i bundle       Specify the path to the intermediate certificate
+                        bundle to use.
+        -r              Print revocation and expiry information.
+        -v              Print extra information during the program's run.
+                        If the certificate validates, also prints 'OK'.
+
+[ Examples ]
+
+To verify the 'www.pem' certificate against the system roots:
+
+        $ certverify www.pem
+        $ echo $?
+        0
+
+To verify the 'www.pem' certificate against the 'ca-cert.pem' CA
+certificate bundle, and seeing a mismatch:
+
+        $ certverify -ca ca-cert.pem www.pem
+        Verification failed: x509: certificate signed by unknown authority
+        $ echo $?
+        1
+
+Using the stealchain (../stealchain) util, print revocation and expiry
+information for google.com:
+
+        $ stealchain google.com
+        [+] wrote google.com.pem.
+        $ certverify -r google.com.pem 
+        certificate expires in 53d.
+

@@ -1,0 +1,41 @@
+fragment
+
+This is a program to print a fragment of a file. It takes a filename,
+a starting line (lines are numbered starting at 1) and an optional
+end line or offset. It has one flag, `-nl`, which causes line numbers
+not to be printed.
+
+For example, compare the output to `nl -ba fragment.go`:
+
+$ fragment fragment.go 23 +6
+23: func main() {
+24:     flag.Parse()
+25: 
+26:     if flag.NArg() < 2 || flag.NArg() > 3 {
+27:             usage()
+28:             os.Exit(1)
+29:     }
+
+$ fragment fragment.go 25 30
+25: 
+26:     if flag.NArg() < 2 || flag.NArg() > 3 {
+27:             usage()
+28:             os.Exit(1)
+29:     }
+30: 
+
+$ fragment fragment.go 80
+80
+80:             if n > end {
+81:                     return true
+82:             }
+83:             return false
+84:     }
+85: 
+86:     fmt.Println(start)
+87:     fmtStr += "\n"
+88:     for i := start; !endFunc(i); i++ {
+89:             fmt.Printf(fmtStr, i, lines[i])
+90:     }
+91: }
+

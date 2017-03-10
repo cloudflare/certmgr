@@ -1,0 +1,42 @@
+stealchain
+
+This is a utility to extract the verified X.509 chain from a TLS
+connection. It takes a list of sites on the command line; for each
+site that it can connect to, it will dump the certificates that the
+peer actually sent (and not the verified chain that is built from
+this).
+
+It was written to assist in debugging issues with certificate chains.
+
+There are a few knobs:
+
+-ca allows the trusted CA roots to be specified via a PEM bundle of
+root certificates.
+
+-sni specifies the server name for SNI. This applies to all hosts in
+the run; if this is run as
+
+	$ stealchain -sni foo.com foo.com bar.com
+
+it will attempt to use "foo.com" as the server name for both hosts.
+
+-noverify skips certificate verification. This might be useful for seeing
+what certificates a server is actually sending.
+
+
+Examples:
+
+ 	$ stealchain kyleisom.net
+	[+] wrote kyleisom.net.pem.
+	$ readchain kyleisom.net.pem 
+	[+] kyleisom.net.pem:
+        	*.kyleisom.net
+	        COMODO RSA Domain Validation Secure Server CA
+
+	$ stealchain google.com microsoft.com apple.com amazon.com
+	[+] wrote google.com.pem.
+	[+] wrote microsoft.com.pem.
+	[+] wrote apple.com.pem.
+	[+] wrote amazon.com.pem.
+
+

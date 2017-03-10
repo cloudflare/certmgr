@@ -1,0 +1,19 @@
+certchain
+
+This is a utility for printing the X.509 certificate chain from a TLS
+connection.
+
+Note: while this will accept more than one server, it will print all
+of the chains without any indication where one chain ends and the next
+begins. This was the intended behaviour for the use case, but it may
+not be applicable in other cases.
+
+There are no knobs.
+
+Examples:
+	$ certchain www.kyleisom.net
+	-----BEGIN CERTIFICATE-----
+	MIIFUTCCBDmgAwIBAgIQaaTVw0yZFGAYvFDKAIo4BzANBgkqhkiG9w0BAQsFADCB
+	kDELMAkGA1UEBhMCR0IxGzAZBgNVBAgTEkdyZWF0ZXIgTWFuY2hlc3RlcjEQMA4G
+	A1UEBxMHU2FsZm9yZDEaMBgGA1UEChMRQ09NT0RPIENBIExpbWl0ZWQxNjA0BgNV
+	...

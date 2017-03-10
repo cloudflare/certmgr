@@ -1,0 +1,15 @@
+renfnv
+
+This renames a file to the base32-encoded 64-bit FNV-1a hash of the
+file's contents. The extension is preserved. This was motivated by
+a desire to normalise names for photographs.
+
+Usage: renfnv [-fhlnv] files...
+
+        -f      force overwriting of files when there is a collision.
+        -h      print this help message.
+        -l      list changed files.
+        -n      Perform a dry run: don't actually move files.
+        -v      Print all files as they are processed. If both -v and -l
+                are specified, it will behave as if only -v was specified.
+
