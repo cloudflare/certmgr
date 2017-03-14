@@ -83,7 +83,8 @@ This contains all of the currently available parameters:
 * `dir`: this specifies the directory containing the certificate specs
 * `svcmgr`: this specifies the service manager to use for restarting
   or reloading services. This can be `systemd` (using `systemctl`),
-  `sysv` (using `service`), or `circus` (using `circusctl`).
+  `sysv` (using `service`), `circus` (using `circusctl`), or `dummy`
+  (no restart/reload behavior).
 * `before`: this is the interval before a certificate expires to start
   attempting to renew it.
 * `interval`: this controls how often to check certificate expirations

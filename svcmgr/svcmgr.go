@@ -1,7 +1,8 @@
 // Package svcmgr contains integration for managing services on a
 // machine.
 //
-// Currently supported service managers are systemd, circus, and sysv.
+// Currently supported service managers are systemd, circus, sysv,
+// and dummy.
 package svcmgr
 
 import (

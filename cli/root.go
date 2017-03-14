@@ -70,7 +70,7 @@ func init() {
 
 	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "f", "", "config file (default is /etc/certmgr/certmgr.yaml)")
 	RootCmd.PersistentFlags().StringVarP(&manager.Dir, "dir", "d", "", "directory containing certificate specs")
-	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", "service manager (one of systemd, sysv, or circus)")
+	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", "service manager (one of systemd, sysv, circus, or dummy)")
 	RootCmd.PersistentFlags().StringVarP(&manager.Before, "before", "t", "", "how long before certificates expire to start renewing (in the form Nh)")
 	RootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug mode")
 	RootCmd.Flags().BoolVarP(&sync, "sync", "s", false, "the first certificate check should be synchronous")
