@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -23,10 +24,10 @@ import (
 
 // A CA contains the core details for a CFSSL CA.
 type CA struct {
-	Remote  string `json:"remote"`
-	Label   string `json:"label"`
-	Profile string `json:"profile"`
-	AuthKey string `json:"auth_key"`
+	Remote  string `json:"remote" yaml:"remote"`
+	Label   string `json:"label" yaml:"label"`
+	Profile string `json:"profile" yaml:"profile"`
+	AuthKey string `json:"auth_key" yaml:"auth_key"`
 }
 
 func displayName(name pkix.Name) string {
@@ -107,6 +108,8 @@ func (spec *Spec) String() string {
 	if name == "" {
 		name = spec.Cert.Path
 	}
+
+	name += fmt.Sprintf(" (CA: %#v)", spec.CA)
 
 	return name
 }
@@ -246,12 +249,42 @@ func (spec *Spec) RefreshKeys() error {
 	return nil
 }
 
+// If the certificate is older than the spec, it should be
+// removed.
+func (spec *Spec) removeCertificateIfOutdated() {
+	specStat, err := os.Stat(spec.Path)
+	if err != nil {
+		// The assertion here is that the spec actually
+		// exists. If it doesn't, something is wrong with the
+		// world.
+		panic("cert: certificate spec doesn't exist during readiness check")
+	}
+
+	certStat, err := os.Stat(spec.Cert.Path)
+	if err != nil {
+		// If the certificate doesn't exist, nothing needs to
+		// be done.
+		return
+	}
+
+	// If the spec is newer than the certificate, remove it.
+	if !specStat.ModTime().After(certStat.ModTime()) {
+		os.Remove(spec.Cert.Path)
+	}
+}
+
 // Ready returns true if the key pair specified by the Spec exists; it
 // doesn't check whether it needs to be renewed.
 func (spec *Spec) Ready() bool {
+	fmt.Printf("\n\n\n-----\nCA: %#v\n-----\n\n\n", spec.CA)
 	if spec.tr == nil {
 		panic("cert: cannot check readiness because spec has an invalid transport")
 	}
+
+	// If the certificate is older than the spec, we should remove
+	// it to force an update.
+	spec.removeCertificateIfOutdated()
+
 	return spec.tr.Provider.Ready()
 }
 
@@ -269,6 +302,7 @@ func (spec *Spec) Certificate() *x509.Certificate {
 	if spec.tr == nil {
 		panic("cert: cannot retrieve certificate because spec has an invalid transport")
 	}
+
 	return spec.tr.Provider.Certificate()
 }
 
