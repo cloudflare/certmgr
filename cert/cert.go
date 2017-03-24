@@ -17,7 +17,6 @@ import (
 	"gopkg.in/yaml.v1"
 
 	"github.com/cloudflare/cfssl/csr"
-	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/cfssl/transport"
 	"github.com/cloudflare/cfssl/transport/core"
 )
@@ -212,7 +211,6 @@ func Load(path, remote string, before time.Duration) (*Spec, error) {
 	// the certificate and private key don't exist yet.
 	err = spec.tr.Provider.Load()
 	if err != nil {
-		log.Debugf("cert: %s", err)
 		err = nil
 	}
 	return spec, err
