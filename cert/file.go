@@ -12,10 +12,10 @@ var idRegexp = regexp.MustCompile(`^\d+$`)
 
 // File contains path and ownership information for a file.
 type File struct {
-	Path  string `json:"path"`
-	Owner string `json:"owner"`
-	Group string `json:"group"`
-	Mode  string `json:"mode"`
+  Path  string `json:"path" yaml:"path"`
+  Owner string `json:"owner" yaml:"owner"`
+  Group string `json:"group" yaml:"group"`
+  Mode  string `json:"mode" yaml:"mode"`
 
 	uid, gid int
 	mode     os.FileMode
