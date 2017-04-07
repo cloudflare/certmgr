@@ -108,8 +108,6 @@ func (spec *Spec) String() string {
 		name = spec.Cert.Path
 	}
 
-	name += fmt.Sprintf(" (CA: %#v)", spec.CA)
-
 	return name
 }
 
@@ -274,7 +272,6 @@ func (spec *Spec) removeCertificateIfOutdated() {
 // Ready returns true if the key pair specified by the Spec exists; it
 // doesn't check whether it needs to be renewed.
 func (spec *Spec) Ready() bool {
-	fmt.Printf("\n\n\n-----\nCA: %#v\n-----\n\n\n", spec.CA)
 	if spec.tr == nil {
 		panic("cert: cannot check readiness because spec has an invalid transport")
 	}
