@@ -176,7 +176,6 @@ func (m *Manager) Load() error {
 			}
 		}
 
-		log.Infof("spec CA: %#v\n", cert.CA)
 		m.Certs = append(m.Certs, cert)
 		metrics.WatchCount.Inc()
 		return nil
