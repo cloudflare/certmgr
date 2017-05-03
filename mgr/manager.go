@@ -276,6 +276,69 @@ func (m *Manager) CheckCertsSync() int {
 	return failed
 }
 
+// MustCheckCerts acts like CheckCerts, except it's synchronous and
+// has a maxmimum number of failures that are tolerated. If tolerate
+// is less than 1, it will be set to 1.
+func (m *Manager) MustCheckCerts(tolerance int) error {
+	if tolerance < 1 {
+		tolerance = 1
+	}
+
+	log.Infof("manager: ensuring all certificates exist and are ready (maximum %d tries)", tolerance)
+
+	type queuedCert struct {
+		cert     *cert.Spec
+		errcount int
+		err      error
+	}
+
+	var queue = make(chan *queuedCert, len(m.Certs))
+	for i := range m.Certs {
+		if !m.Certs[i].Ready() && !m.Certs[i].IsQueued() {
+			queue <- &queuedCert{cert: m.Certs[i]}
+			continue
+		}
+
+		if m.Certs[i].Lifespan() <= 0 {
+			queue <- &queuedCert{cert: m.Certs[i]}
+			continue
+		}
+	}
+
+	if len(queue) == 0 {
+		log.Infof("manager: all certificates are up-to-date.")
+		close(queue)
+	}
+
+	for cert := range queue {
+		log.Infof("manager: processing certificate spec %s on attempt %d",
+			cert.cert.Path, cert.errcount+1)
+		if cert.errcount >= tolerance {
+			if cert.err != nil {
+				return cert.err
+			}
+			return fmt.Errorf("manager: failed to ensure certificate is present (spec=%s); no reason was given.", cert.cert.Path)
+		}
+
+		cert.err = cert.cert.RefreshKeys()
+		if cert.err != nil {
+			log.Errorf("manager: failed to process spec: %s; queueing for retry", cert.cert.Path)
+			cert.errcount++
+			queue <- cert
+			continue
+		}
+		log.Infof("manager: certificate spec %s successfully processed", cert.cert.Path)
+
+		if len(queue) == 0 {
+			log.Infof("manager: certificate queue is clear")
+			close(queue)
+			break
+		}
+	}
+
+	return nil
+}
+
 // SetExpiresNext sets the next expiration metric.
 func (m *Manager) SetExpiresNext() {
 	var expires time.Time
