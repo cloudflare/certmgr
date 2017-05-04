@@ -193,8 +193,13 @@ specified:
   specs available in the certificate spec directory.
 * `clean`: removes all of the certificates and private keys specified
   by the certificate specs.
+* `ensure`: attempts to load all certificate specs, and ensure that
+  the TLS key pairs they identify exist, are valid, and that they are
+  up-to-date.
 * `genconfig`: generates a default configuration file and ensures the
   default service directory exists.
+* `version`: prints certificate manager's version, the version of Go
+  it was built with, and shows the current configuration.
 
 ## See also
 
