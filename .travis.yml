@@ -1,0 +1,30 @@
+language: go
+go:
+  - 1.8.x
+install:
+  - go get github.com/Masterminds/glide
+script:
+  - go test -v $(glide nv)
+
+jobs:
+  include:
+  - stage: Cross-Build
+    go: 1.8.x
+    env:
+      - CGO_ENABLED=0
+    script:
+      - go get github.com/mitchellh/gox
+      - gox -output="{{.Dir}}-{{.OS}}-{{.Arch}}-${TRAVIS_TAG:-${TRAVIS_COMMIT}}" -os='darwin dragonfly freebsd linux netbsd openbsd solaris' -osarch='!dragonfly/386 !darwin/arm64 !darwin/arm' ./cmd/certmgr/...
+      - for i in certmgr-*; do tar -czf $i.tar.gz $i; done
+      - shasum -a 512 certmgr-*.tar.gz | tee sha512sum.txt
+    deploy:
+      provider: releases
+      api_key:
+        secure: cPWR8Je1WoEYWX3ljHKI7pb4lAK6LJ/HTAsa8IPVv0TmXrgGhK1Cgz8K9Ty932lW/kAflCG7VSAJsFzXNcDFTbMv6ftxYGOQoSD9A8NVjjadX5ITdisr0BHVYLUZm1SdRI4Z+0OtUY2Dr/PZLGUEt7GuV5059UEyaDtMEE2yAKlo1mtrt5XG+8eF3jFteeNVEQ5f4VwMTF8JMrPKzU2aJ6g07OQvHXfKWq5MbD14eh4vRfIpH0+SVb650Gc9VHASuIH7TAw7b7uPgahJkE88h3WbLkQfqlXqbgMiGqQkUlbgFwdDSDu4V5IhAc235sK0FBkB1lBsEo79hqYpTbIpqI3SKMz1x6aeYRDmGXmuslWK4asym7VN+nUxx6mRswIT8PrN1wPH8oz6bbWN9m/QF//ISFy0tZLCVt+AsrTYHqkN8ukbbSqoG3FfmEhq/PR+7G72IQT8dqO3JEcbXtvPH9BGmbmkuFiCUxtK7pNTZJ0K8PTQoOZ64NnqWGbo0TlfOn8YtFHcpzu3d51EYHibNR19HY0HgYTu9AM0HfjSf089Q/M9TdpUD4ePL98MeUFuDXwvPBLExBnR3bcF0WLxjHKqAn96v+//dekAFqHbDHoSmECdVoYXEvVwq6roJSNxQyp6JVXiKRngLPekeftL7MrBU15HV76wkyNL0+bp6nQ=
+      skip_cleanup: true
+      file_glob: true
+      file:
+        - certmgr_*.tar.gz
+        - sha512sum.txt
+      on:
+        tags: true
