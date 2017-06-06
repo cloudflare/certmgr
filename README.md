@@ -186,8 +186,8 @@ The CA specification contains the following fields:
 
 ## Subcommands
 
-In addition to the certificate manager, there a few utility functions
-specified:
+In addition to the certificate manager, there are a few utility
+functions specified:
 
 * `check`: validates the configuration file and all the certificate
   specs available in the certificate spec directory.
