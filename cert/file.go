@@ -6,16 +6,18 @@ import (
 	"os/user"
 	"regexp"
 	"strconv"
+
+	"github.com/cloudflare/cfssl/log"
 )
 
 var idRegexp = regexp.MustCompile(`^\d+$`)
 
 // File contains path and ownership information for a file.
 type File struct {
-  Path  string `json:"path" yaml:"path"`
-  Owner string `json:"owner" yaml:"owner"`
-  Group string `json:"group" yaml:"group"`
-  Mode  string `json:"mode" yaml:"mode"`
+	Path  string `json:"path" yaml:"path"`
+	Owner string `json:"owner" yaml:"owner"`
+	Group string `json:"group" yaml:"group"`
+	Mode  string `json:"mode" yaml:"mode"`
 
 	uid, gid int
 	mode     os.FileMode
@@ -121,6 +123,7 @@ func (f *File) Set() error {
 
 // Remove deletes the file specified by the Path field.
 func (f *File) Remove() error {
+	log.Debugf("removing %s", f.Path)
 	err := os.Remove(f.Path)
 	if os.IsNotExist(err) {
 		return nil
