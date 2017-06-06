@@ -17,6 +17,7 @@ import (
 	"gopkg.in/yaml.v1"
 
 	"github.com/cloudflare/cfssl/csr"
+	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/cfssl/transport"
 	"github.com/cloudflare/cfssl/transport/core"
 )
@@ -264,7 +265,10 @@ func (spec *Spec) removeCertificateIfOutdated() {
 	}
 
 	// If the spec is newer than the certificate, remove it.
-	if !specStat.ModTime().After(certStat.ModTime()) {
+	if specStat.ModTime().After(certStat.ModTime()) {
+		log.Infof("the spec's mtime is %d, but cert's mtime is %d: removing certificate",
+			specStat.ModTime().Unix(),
+			certStat.ModTime().Unix())
 		os.Remove(spec.Cert.Path)
 	}
 }
