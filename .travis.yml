@@ -24,7 +24,7 @@ jobs:
       skip_cleanup: true
       file_glob: true
       file:
-        - certmgr_*.tar.gz
+        - certmgr-*.tar.gz
         - sha512sum.txt
       on:
         tags: true
