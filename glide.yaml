@@ -177,3 +177,15 @@ import:
   version: a5b47d31c556af34a302ce5d659e6fea44d90de0
   repo: https://gopkg.in/yaml.v2
 - package: gopkg.in/yaml.v1
+- package: golang.org/x/tools
+  subpackages:
+  - go/loader
+  - go/buildutil
+- package: github.com/julienschmidt/httprouter
+  version: ^1.1.0
+- package: github.com/Sirupsen/logrus
+  version: ^1.0.2
+- package: github.com/kr/text
+- package: github.com/mattn/go-sqlite3
+  version: ^1.2.0
+- package: github.com/juju/ratelimit

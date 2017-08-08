@@ -1,5 +1,5 @@
-hash: 392d04eaafd23e93898e9d303c96152fd5a424eef40601b79677e41d05cbbbbc
-updated: 2017-03-10T11:28:02.499268834-08:00
+hash: cb53fbc6b43b742e80ae0c71588fef2526a7eda692a96825dbde78e422a85cb5
+updated: 2017-08-08T11:47:27.281506664-07:00
 imports:
 - name: github.com/armon/consul-api
   version: dcfedd50ed5334f96adee43fc88518a4f095e15c
@@ -75,6 +75,10 @@ imports:
   - json/token
 - name: github.com/inconshreveable/mousetrap
   version: 76626ae9c91c4f2a10f34cad8ce83ea42c93bb75
+- name: github.com/juju/ratelimit
+  version: 5b9ff866471762aa2ab2dced63c9fb6f53921342
+- name: github.com/julienschmidt/httprouter
+  version: 8c199fb6259ffc1af525cc3ad52ee60ba8359669
 - name: github.com/kisom/goutils
   version: 89bddc74bb983ef7783396020d24554040e3d499
   repo: https://github.com/kisom/goutils
@@ -83,9 +87,13 @@ imports:
 - name: github.com/kr/fs
   version: 2788f0dbd16903de03cb8186e5c7d97b69ad387b
   repo: https://github.com/kr/fs
+- name: github.com/kr/text
+  version: 7cafcd837844e784b526369c9bce262804aebc60
 - name: github.com/magiconair/properties
   version: 0723e352fa358f9322c938cc2dadda874e9151a9
   repo: https://github.com/magiconair/properties
+- name: github.com/mattn/go-sqlite3
+  version: ca5e3819723d8eeaf170ad510e7da1d6d2e94a08
 - name: github.com/matttproud/golang_protobuf_extensions
   version: c12348ce28de40eed0136aa2b644d0ee0650e56c
   repo: https://github.com/matttproud/golang_protobuf_extensions
@@ -132,6 +140,8 @@ imports:
 - name: github.com/shurcooL/sanitized_anchor_name
   version: 1dba4b3954bc059efc3991ec364f9f9a35f597d2
   repo: https://github.com/shurcooL/sanitized_anchor_name
+- name: github.com/Sirupsen/logrus
+  version: a3f95b5c423586578a4e099b11a46c2479628cac
 - name: github.com/spf13/afero
   version: 52e4a6cfac46163658bd4f123c49b6ee7dc75f78
   repo: https://github.com/spf13/afero
@@ -195,6 +205,11 @@ imports:
   subpackages:
   - transform
   - unicode/norm
+- name: golang.org/x/tools
+  version: 5831d16d18029819d39f99bdc2060b8eff410b6b
+  subpackages:
+  - go/buildutil
+  - go/loader
 - name: gopkg.in/yaml.v1
   version: 9f9df34309c04878acc86042b16630b0f696e1de
 - name: gopkg.in/yaml.v2
