@@ -246,8 +246,8 @@ func (spec *Spec) RefreshKeys() error {
 	return nil
 }
 
-// removeCertificateIfOudated removes the certificate if its older than the
-// spec and returns true if it did so.
+// removeCertificateIfOudated removes the certificate if it's older than the
+// spec, returning true if the certificate was removed.
 func (spec *Spec) removeCertificateIfOutdated() bool {
 	specStat, err := os.Stat(spec.Path)
 	if err != nil {
@@ -264,7 +264,8 @@ func (spec *Spec) removeCertificateIfOutdated() bool {
 		return false
 	}
 
-	// if the spec is not newer than the cert, nothing needs to be done
+	// If the spec is not newer than the cert, nothing needs to be
+	// done.
 	if !specStat.ModTime().After(certStat.ModTime()) {
 		return false
 	}
@@ -284,8 +285,8 @@ func (spec *Spec) Ready() bool {
 	}
 
 	// If the certificate is older than the spec, we should remove
-	// it to force an update, and return false to mark the spec as not ready so
-	// we can put it into the queue again.
+	// the cert to force an update, then return false to mark the
+	// spec as not ready so that it will be requeued.
 	if spec.removeCertificateIfOutdated() {
 		return false
 	}
