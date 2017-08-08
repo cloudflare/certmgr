@@ -246,9 +246,9 @@ func (spec *Spec) RefreshKeys() error {
 	return nil
 }
 
-// If the certificate is older than the spec, it should be
-// removed.
-func (spec *Spec) removeCertificateIfOutdated() {
+// removeCertificateIfOudated removes the certificate if its older than the
+// spec and returns true if it did so.
+func (spec *Spec) removeCertificateIfOutdated() bool {
 	specStat, err := os.Stat(spec.Path)
 	if err != nil {
 		// The assertion here is that the spec actually
@@ -261,16 +261,19 @@ func (spec *Spec) removeCertificateIfOutdated() {
 	if err != nil {
 		// If the certificate doesn't exist, nothing needs to
 		// be done.
-		return
+		return false
 	}
 
-	// If the spec is newer than the certificate, remove it.
-	if specStat.ModTime().After(certStat.ModTime()) {
-		log.Infof("the spec's mtime is %d, but cert's mtime is %d: removing certificate",
-			specStat.ModTime().Unix(),
-			certStat.ModTime().Unix())
-		os.Remove(spec.Cert.Path)
+	// if the spec is not newer than the cert, nothing needs to be done
+	if !specStat.ModTime().After(certStat.ModTime()) {
+		return false
 	}
+
+	log.Infof("the spec's mtime is %d, but cert's mtime is %d: removing certificate",
+		specStat.ModTime().Unix(),
+		certStat.ModTime().Unix())
+	os.Remove(spec.Cert.Path)
+	return true
 }
 
 // Ready returns true if the key pair specified by the Spec exists; it
@@ -281,8 +284,11 @@ func (spec *Spec) Ready() bool {
 	}
 
 	// If the certificate is older than the spec, we should remove
-	// it to force an update.
-	spec.removeCertificateIfOutdated()
+	// it to force an update, and return false to mark the spec as not ready so
+	// we can put it into the queue again.
+	if spec.removeCertificateIfOutdated() {
+		return false
+	}
 
 	return spec.tr.Provider.Ready()
 }
