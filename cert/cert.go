@@ -16,18 +16,83 @@ import (
 
 	"gopkg.in/yaml.v1"
 
+	"github.com/cloudflare/cfssl/api/client"
 	"github.com/cloudflare/cfssl/csr"
+	"github.com/cloudflare/cfssl/info"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/cfssl/transport"
 	"github.com/cloudflare/cfssl/transport/core"
 )
 
-// A CA contains the core details for a CFSSL CA.
+// A CA contains the core details for a CFSSL CA. There are two ways
+// to use this: fill out Name to refer to a global CA (e.g. as defined
+// in the config file) or fill out Remote, Label, Profile, and AuthKey.
 type CA struct {
+	Name    string `json:"name" yaml:"name"`
 	Remote  string `json:"remote" yaml:"remote"`
 	Label   string `json:"label" yaml:"label"`
 	Profile string `json:"profile" yaml:"profile"`
 	AuthKey string `json:"auth_key" yaml:"auth_key"`
+	File    *File  `json:"file,omitempty" yaml:"file,omitempty"`
+	loaded  bool
+}
+
+// Load reads the CA certificate from the configured remote, and if a
+// File section is present in the config, it will attempt to write the
+// CA certificate to disk.
+func (ca *CA) Load() error {
+	if ca.File == nil {
+		log.Info("cert: no CA file provided, won't write to disk")
+		return nil
+	}
+
+	ca.File.Path = filepath.Clean(ca.File.Path)
+	err := ca.File.Parse(fmt.Sprintf("CA:%s/%s/%s", ca.Remote, ca.Label, ca.Profile))
+	if err != nil {
+		return err
+	}
+
+	remote := client.NewServer(ca.Remote)
+	infoReq := &info.Req{
+		Label:   ca.Label,
+		Profile: ca.Profile,
+	}
+
+	serialisedRequest, err := json.Marshal(infoReq)
+	if err != nil {
+		return err
+	}
+
+	resp, err := remote.Info(serialisedRequest)
+	if err != nil {
+		return err
+	}
+
+	maybeExisting, err := ioutil.ReadFile(ca.File.Path)
+	if err == nil {
+		if strings.TrimSpace(string(maybeExisting)) != strings.TrimSpace(resp.Certificate) {
+			err = ioutil.WriteFile(ca.File.Path, []byte(resp.Certificate), 0644)
+			if err != nil {
+				return err
+			}
+			log.Infof("cert: wrote CA certificate: %s", ca.File.Path)
+		} else {
+			log.Infof("cert: existing CA certificate at %s is current, won't overwrite",
+				ca.File.Path)
+		}
+	}
+
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	err = ca.File.Set()
+	if err != nil {
+		return err
+	}
+
+	ca.loaded = true
+	return nil
 }
 
 func displayName(name pkix.Name) string {
@@ -180,26 +245,35 @@ func Load(path, remote string, before time.Duration) (*Spec, error) {
 		return nil, err
 	}
 
-	if spec.CA.Remote == "" {
-		spec.CA.Remote = remote
+	if spec.CA.Name == "" {
+		if spec.CA.Remote == "" {
+			spec.CA.Remote = remote
+		}
+
+		if spec.CA.Remote == "" {
+			return nil, errors.New("cert: no remote specified in authority (either in the spec or in the certmgr config)")
+		}
+	} else {
+
 	}
 
-	if spec.CA.Remote == "" {
-		return nil, errors.New("cert: no remote specified in authority (either in the spec or in the certmgr config)")
-	}
-
-	err = spec.Key.parse("private_key")
+	err = spec.Key.Parse("private_key")
 	if err != nil {
 		return nil, err
 	}
 
-	err = spec.Cert.parse("certificate")
+	err = spec.Cert.Parse("certificate")
 	if err != nil {
 		return nil, err
 	}
 
 	spec.Key.Path = filepath.Clean(spec.Key.Path)
 	spec.Cert.Path = filepath.Clean(spec.Cert.Path)
+
+	err = spec.CA.Load()
+	if err != nil {
+		return nil, err
+	}
 
 	spec.tr, err = transport.New(before, spec.Identity())
 	if err != nil {
