@@ -23,12 +23,13 @@ type File struct {
 	mode     os.FileMode
 }
 
-// parse sets up the File structure from its string parameters; the
+// Parse sets up the File structure from its string parameters; the
 // hint is used to provide a hint as to what file is being processed
 // for use in error messages. This includes validating that the user
 // and group referenced exist; providing sensible defaults, and
-// processing the mode.
-func (f *File) parse(hint string) (err error) {
+// processing the mode. The method is intended to allow set up after
+// unmarshalling from a configuration file.
+func (f *File) Parse(hint string) (err error) {
 	if f.Path == "" {
 		return fmt.Errorf("cert: missing path for %s", hint)
 	}
