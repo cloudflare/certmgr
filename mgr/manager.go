@@ -392,7 +392,7 @@ func (m *Manager) renewCert(cert *cert.Spec) error {
 		}
 
 		cert.ResetBackoff()
-		return nil
+		return cert.CA.Load()
 	}
 	stop := time.Now()
 
