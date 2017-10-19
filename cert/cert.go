@@ -80,9 +80,15 @@ func (ca *CA) Load() error {
 			log.Infof("cert: existing CA certificate at %s is current, won't overwrite",
 				ca.File.Path)
 		}
+	} else if os.IsNotExist(err) {
+		err = ioutil.WriteFile(ca.File.Path, []byte(resp.Certificate), 0644)
+		if err != nil {
+			return err
+		}
+		log.Infof("cert: wrote CA certificate: %s", ca.File.Path)
 	}
 
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil {
 		return err
 	}
 
