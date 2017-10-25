@@ -251,16 +251,12 @@ func Load(path, remote string, before time.Duration) (*Spec, error) {
 		return nil, err
 	}
 
-	if spec.CA.Name == "" {
-		if spec.CA.Remote == "" {
-			spec.CA.Remote = remote
-		}
+	if spec.CA.Remote == "" {
+		spec.CA.Remote = remote
+	}
 
-		if spec.CA.Remote == "" {
-			return nil, errors.New("cert: no remote specified in authority (either in the spec or in the certmgr config)")
-		}
-	} else {
-
+	if spec.CA.Remote == "" {
+		return nil, errors.New("cert: no remote specified in authority (either in the spec or in the certmgr config)")
 	}
 
 	err = spec.Key.Parse("private_key")
@@ -292,6 +288,7 @@ func Load(path, remote string, before time.Duration) (*Spec, error) {
 	if err != nil {
 		err = nil
 	}
+
 	return spec, err
 }
 
