@@ -147,7 +147,7 @@ func (m *Manager) Load() error {
 		return nil
 	}
 
-	log.Info("manager: loading certificates from", m.Dir)
+	log.Info("manager: loading certificates from ", m.Dir)
 	walker := func(path string, info os.FileInfo, err error) error {
 		if info == nil {
 			return err
