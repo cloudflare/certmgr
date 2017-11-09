@@ -140,6 +140,12 @@ var validActions = map[string]bool{
 	"nop":     true,
 }
 
+var validExtensions = map[string]bool{
+	".json": true,
+	".yaml": true,
+	".yml":  true,
+}
+
 // Load reads the certificate specs from the spec directory.
 func (m *Manager) Load() error {
 	if m.Certs != nil || len(m.Certs) > 0 {
@@ -158,6 +164,11 @@ func (m *Manager) Load() error {
 				return nil
 			}
 			return filepath.SkipDir
+		}
+
+		ext := filepath.Ext(path)
+		if !validExtensions[ext] {
+			return nil
 		}
 
 		log.Info("manager: loading spec from ", path)

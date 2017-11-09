@@ -20,6 +20,10 @@ When run without any subcommands, certmgr will start monitoring
 certificates. The configuration and specifications can be validated
 using the `check` subcommand.
 
+**Note**: due to a [bug](https://github.com/golang/go/issues/19395) in
+the os/user package, `certmgr` requires Go 1.9 or later to use the
+user/group functionality in file specifications.
+
 ## Web server
 
 When appropriately configured, `certmgr` will start a web server that
@@ -137,7 +141,12 @@ An example certificate spec:
         "remote": "ca.example.net:8888",
         "auth_key": "012345678012345678",
         "label": "www_ca",
-        "profile": "three-month"
+        "profile": "three-month",
+        "file": {
+            "path": "/etc/myservice/ca.pem",
+            "owner": "www-data",
+            "group": "www-data"
+        }
     }
 }
 ```
@@ -183,6 +192,8 @@ The CA specification contains the following fields:
 * `auth_key`: the authentication key used to request a certificate.
 * `label`: the CA to use for the certificate.
 * `profile`: the CA profile that should be used.
+* `file`: if this is included, the CA certificate will be saved here. It
+  follows the same file specification format above.
 
 ## Subcommands
 
