@@ -42,7 +42,9 @@ type CA struct {
 // CA certificate to disk.
 func (ca *CA) Load() error {
 	if ca.File == nil {
-		log.Info("cert: no CA file provided, won't write to disk")
+		// NB: this used to be an info message, but it caused
+		// more confusion than anything else.
+		log.Debug("cert: no CA file provided, won't write the CA file to disk")
 		return nil
 	}
 
