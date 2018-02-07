@@ -3,6 +3,7 @@
 package cert
 
 import (
+	"bytes"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -34,17 +35,32 @@ type CA struct {
 	Profile string `json:"profile" yaml:"profile"`
 	AuthKey string `json:"auth_key" yaml:"auth_key"`
 	File    *File  `json:"file,omitempty" yaml:"file,omitempty"`
+	pem     []byte
 	loaded  bool
 }
 
-// Load reads the CA certificate from the configured remote, and if a
-// File section is present in the config, it will attempt to write the
-// CA certificate to disk.
-func (ca *CA) Load() error {
+func (ca *CA) getRemoteCert() ([]byte, error) {
+	remote := client.NewServer(ca.Remote)
+	infoReq := &info.Req{
+		Label:   ca.Label,
+		Profile: ca.Profile,
+	}
+
+	serialisedRequest, err := json.Marshal(infoReq)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := remote.Info(serialisedRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	return []byte(strings.TrimSpace(resp.Certificate)), nil
+}
+
+func (ca *CA) writeCert(cert []byte) error {
 	if ca.File == nil {
-		// NB: this used to be an info message, but it caused
-		// more confusion than anything else.
-		log.Debug("cert: no CA file provided, won't write the CA file to disk")
 		return nil
 	}
 
@@ -54,26 +70,10 @@ func (ca *CA) Load() error {
 		return err
 	}
 
-	remote := client.NewServer(ca.Remote)
-	infoReq := &info.Req{
-		Label:   ca.Label,
-		Profile: ca.Profile,
-	}
-
-	serialisedRequest, err := json.Marshal(infoReq)
-	if err != nil {
-		return err
-	}
-
-	resp, err := remote.Info(serialisedRequest)
-	if err != nil {
-		return err
-	}
-
 	maybeExisting, err := ioutil.ReadFile(ca.File.Path)
 	if err == nil {
-		if strings.TrimSpace(string(maybeExisting)) != strings.TrimSpace(resp.Certificate) {
-			err = ioutil.WriteFile(ca.File.Path, []byte(resp.Certificate), 0644)
+		if !bytes.Equal(maybeExisting, cert) {
+			err = ioutil.WriteFile(ca.File.Path, cert, 0644)
 			if err != nil {
 				return err
 			}
@@ -83,7 +83,7 @@ func (ca *CA) Load() error {
 				ca.File.Path)
 		}
 	} else if os.IsNotExist(err) {
-		err = ioutil.WriteFile(ca.File.Path, []byte(resp.Certificate), 0644)
+		err = ioutil.WriteFile(ca.File.Path, cert, 0644)
 		if err != nil {
 			return err
 		}
@@ -95,12 +95,56 @@ func (ca *CA) Load() error {
 	}
 
 	err = ca.File.Set()
+	return err
+}
+
+// Load reads the CA certificate from the configured remote, and if a
+// File section is present in the config, it will attempt to write the
+// CA certificate to disk.
+func (ca *CA) Load() error {
+	cert, err := ca.getRemoteCert()
+	if err != nil {
+		log.Errorf("cert: failed to fetch remote CA: %s", err)
+		return err
+	}
+
+	if ca.File == nil {
+		// NB: this used to be an info message, but it caused
+		// more confusion than anything else.
+		ca.pem = cert
+		log.Debug("cert: no CA file provided, won't write the CA file to disk")
+		return nil
+	}
+
+	err = ca.writeCert(cert)
 	if err != nil {
 		return err
 	}
 
 	ca.loaded = true
 	return nil
+}
+
+// Refresh fetches the latest CA cert. If it has changed, write the
+// new CA cert and return true.
+func (ca *CA) Refresh() (changed bool, err error) {
+	cert, err := ca.getRemoteCert()
+	if err != nil {
+		return
+	}
+
+	if bytes.Equal(cert, ca.pem) {
+		return
+	}
+	changed = true
+
+	if ca.File == nil {
+		return
+	}
+
+	ca.pem = cert
+	err = ca.writeCert(ca.pem)
+	return
 }
 
 func displayName(name pkix.Name) string {
