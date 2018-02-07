@@ -207,6 +207,34 @@ func (m *Manager) Load() error {
 	return nil
 }
 
+// CheckCA checks the CA on the certificate and restarts the service
+// if needed.
+func (m *Manager) CheckCA(spec *cert.Spec) error {
+	if changed, err := spec.CA.Refresh(); err != nil {
+		return err
+	} else if changed {
+		switch spec.Action {
+		case "restart":
+			log.Infof("manager: restarting service %s due to CA change",
+				spec.Service)
+			err = m.serviceManager.RestartService(spec.Service)
+		case "reload":
+			log.Infof("manager: reloading service %s due to CA change",
+				spec.Service)
+			err = m.serviceManager.ReloadService(spec.Service)
+		default:
+			// Nothing to do here.
+		}
+
+		if err != nil {
+			log.Errorf("manager: failed to %s service %s (err=%s)",
+				spec.Action, spec.Service, err)
+		}
+		return err
+	}
+	return nil
+}
+
 // Queue adds the spec to the renewal queue if it isn't already
 // queued.
 func (m *Manager) Queue(spec *cert.Spec) {
@@ -227,6 +255,10 @@ func (m *Manager) CheckCerts() {
 
 	log.Info("manager: checking certificates")
 	for i := range m.Certs {
+		if err := m.CheckCA(m.Certs[i]); err != nil {
+			log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", m.Certs[i])
+		}
+
 		if !m.Certs[i].Ready() {
 			log.Infof("manager: queueing %s because it isn't ready", m.Certs[i])
 			m.Queue(m.Certs[i])
@@ -243,7 +275,6 @@ func (m *Manager) CheckCerts() {
 		if next == 0 || next > lifespan {
 			next = lifespan
 		}
-
 	}
 
 	m.SetExpiresNext()
@@ -260,6 +291,10 @@ func (m *Manager) CheckCertsSync() int {
 
 	log.Info("manager: checking certificates (sync)")
 	for i := range m.Certs {
+		if err := m.CheckCA(m.Certs[i]); err != nil {
+			log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", m.Certs[i])
+		}
+
 		if !m.Certs[i].Ready() && !m.Certs[i].IsQueued() {
 			err := m.Certs[i].RefreshKeys()
 			if err != nil {
@@ -305,6 +340,10 @@ func (m *Manager) MustCheckCerts(tolerance int) error {
 
 	var queue = make(chan *queuedCert, len(m.Certs))
 	for i := range m.Certs {
+		if err := m.CheckCA(m.Certs[i]); err != nil {
+			log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", m.Certs[i])
+		}
+
 		if !m.Certs[i].Ready() && !m.Certs[i].IsQueued() {
 			queue <- &queuedCert{cert: m.Certs[i]}
 			continue
@@ -403,7 +442,7 @@ func (m *Manager) renewCert(cert *cert.Spec) error {
 		}
 
 		cert.ResetBackoff()
-		return cert.CA.Load()
+		return nil
 	}
 	stop := time.Now()
 
