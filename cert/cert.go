@@ -34,6 +34,7 @@ type CA struct {
 	Label   string `json:"label" yaml:"label"`
 	Profile string `json:"profile" yaml:"profile"`
 	AuthKey string `json:"auth_key" yaml:"auth_key"`
+	AuthKeyFile string `json:"auth_key_file" yaml:"auth_key_file"`
 	File    *File  `json:"file,omitempty" yaml:"file,omitempty"`
 	pem     []byte
 	loaded  bool
@@ -230,7 +231,7 @@ func (spec *Spec) String() string {
 }
 
 // Identity creates a transport package identity for the certificate.
-func (spec *Spec) Identity() *core.Identity {
+func (spec *Spec) Identity() (*core.Identity, error) {
 	ident := &core.Identity{
 		Request: spec.Request,
 		Roots: []*core.Root{
@@ -259,12 +260,21 @@ func (spec *Spec) Identity() *core.Identity {
 		},
 	}
 
-	if spec.CA.AuthKey != "" {
+	authkey := spec.CA.AuthKey
+	if spec.CA.AuthKeyFile != "" {
+		log.Debugf("loading auth_key_file %v", spec.CA.AuthKeyFile)
+		content, err := ioutil.ReadFile(spec.CA.AuthKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed reading auth_key_file %v: %v", spec.CA.AuthKeyFile, err)
+		}
+		authkey = strings.TrimSpace(string(content))
+	}
+	if authkey != "" {
 		ident.Profiles["cfssl"]["auth-type"] = "standard"
-		ident.Profiles["cfssl"]["auth-key"] = spec.CA.AuthKey
+		ident.Profiles["cfssl"]["auth-key"] = authkey
 	}
 
-	return ident
+	return ident, nil
 }
 
 func readCertFile(path string) (*Spec, error) {
@@ -323,7 +333,11 @@ func Load(path, remote string, before time.Duration) (*Spec, error) {
 		return nil, err
 	}
 
-	spec.tr, err = transport.New(before, spec.Identity())
+	identity, err := spec.Identity()
+	if err != nil {
+		return nil, err
+	}
+	spec.tr, err = transport.New(before, identity)
 	if err != nil {
 		return nil, err
 	}
