@@ -2,7 +2,7 @@
 // machine.
 //
 // Currently supported service managers are systemd, circus, sysv,
-// and dummy.
+// openrc, and dummy.
 package svcmgr
 
 import (
