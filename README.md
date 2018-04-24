@@ -190,6 +190,8 @@ The CA specification contains the following fields:
 * `remote`: the CA to use. If not provided, the default remote from
   the config file is used.
 * `auth_key`: the authentication key used to request a certificate.
+* `auth_key_file`: optional, if defined read the auth_key from this. If
+  `auth_key` and `auth_key_file` is defined, `auth_key` is used.
 * `label`: the CA to use for the certificate.
 * `profile`: the CA profile that should be used.
 * `file`: if this is included, the CA certificate will be saved here. It
