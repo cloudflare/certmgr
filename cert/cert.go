@@ -390,49 +390,11 @@ func (spec *Spec) RefreshKeys() error {
 	return nil
 }
 
-// removeCertificateIfOudated removes the certificate if it's older than the
-// spec, returning true if the certificate was removed.
-func (spec *Spec) removeCertificateIfOutdated() bool {
-	specStat, err := os.Stat(spec.Path)
-	if err != nil {
-		// The assertion here is that the spec actually
-		// exists. If it doesn't, something is wrong with the
-		// world.
-		panic("cert: certificate spec doesn't exist during readiness check")
-	}
-
-	certStat, err := os.Stat(spec.Cert.Path)
-	if err != nil {
-		// If the certificate doesn't exist, nothing needs to
-		// be done.
-		return false
-	}
-
-	// If the spec is not newer than the cert, nothing needs to be
-	// done.
-	if !specStat.ModTime().After(certStat.ModTime()) {
-		return false
-	}
-
-	log.Infof("the spec's mtime is %d, but cert's mtime is %d: removing certificate",
-		specStat.ModTime().Unix(),
-		certStat.ModTime().Unix())
-	os.Remove(spec.Cert.Path)
-	return true
-}
-
 // Ready returns true if the key pair specified by the Spec exists; it
 // doesn't check whether it needs to be renewed.
 func (spec *Spec) Ready() bool {
 	if spec.tr == nil {
 		panic("cert: cannot check readiness because spec has an invalid transport")
-	}
-
-	// If the certificate is older than the spec, we should remove
-	// the cert to force an update, then return false to mark the
-	// spec as not ready so that it will be requeued.
-	if spec.removeCertificateIfOutdated() {
-		return false
 	}
 
 	return spec.tr.Provider.Ready()
@@ -442,6 +404,35 @@ func (spec *Spec) Ready() bool {
 func (spec *Spec) Lifespan() time.Duration {
 	if spec.tr == nil {
 		panic("cert: cannot check certificate's lifespan because spec has an invalid transport")
+	}
+
+	// This bit of code is necessary to confirm that the cert/key are older than the spec definition.
+	specStat, err := os.Stat(spec.Path)
+	if err != nil {
+		// The assertion here is that the spec actually
+		// exists. If it doesn't, something is wrong with the
+		// world.
+		panic("cert: certificate spec doesn't exist during RefreshKeys()")
+	}
+
+	isTooOld := func(path string) bool {
+		st, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				log.Errorf("while checking cert/key path %s, got path error %s", path, err)
+			}
+			return true
+		}
+		if specStat.ModTime().After(st.ModTime()) {
+			log.Infof("refreshing due to spec %s having a newer mtime then %s", spec.Path, path)
+			return true
+		}
+		return false
+	}
+	if isTooOld(spec.Key.Path) || isTooOld(spec.Cert.Path) {
+		// This is necessary to essentially force cfssl to regenerate since it's not spec aware.
+		spec.tr.Provider.Certificate().NotAfter = specStat.ModTime()
+		return 0
 	}
 	return spec.tr.Lifespan()
 }
