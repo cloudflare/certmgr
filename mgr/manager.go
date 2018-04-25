@@ -224,6 +224,7 @@ func (m *Manager) CheckCA(spec *CertServiceManager) error {
 	if changed, err := spec.CA.Refresh(); err != nil {
 		return err
 	} else if changed {
+		log.Debug("taking action due to CA refresh")
 		err := spec.TakeAction("CA")
 
 		if err != nil {
@@ -460,6 +461,7 @@ func (m *Manager) refreshKeys(cert *CertServiceManager) {
 	}
 
 	metrics.QueueCount.Dec()
+	log.Debug("taking action due to key refresh")
 	err = cert.TakeAction("key")
 
 	// Even though there was an error managing the service
