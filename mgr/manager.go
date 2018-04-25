@@ -21,6 +21,13 @@ import (
 // Manager. This defaults to one hour.
 const DefaultInterval = time.Hour
 
+// This exists purely so we can bind custom svcmgr's per cert; this is primarily
+// used for 'command' svcmgr's that don't follow the norm.
+type CertServiceManager struct {
+	*cert.Spec
+	serviceManager svcmgr.Manager
+}
+
 // The Manager structure contains the certificates to be managed. A
 // manager needs to be constructed with one of the New functions, and
 // should not be constructed by hand.
@@ -35,7 +42,6 @@ type Manager struct {
 	// ServiceManager is the service manager used to restart a
 	// service.
 	ServiceManager string `json:"service_manager" yaml:"service_manager"`
-	serviceManager svcmgr.Manager
 
 	// Before is how long before the cert expires to start
 	// attempting to renew it.
@@ -47,11 +53,11 @@ type Manager struct {
 	interval time.Duration
 
 	// Certs contains the list of certificates to manage.
-	Certs []*cert.Spec `json:",omitempty" yaml:",omitempty"`
+	Certs []*CertServiceManager `json:",omitempty" yaml:",omitempty"`
 
 	// renew is the queue used to manage certificates that need to
 	// be renewed.
-	renew chan *cert.Spec
+	renew chan *CertServiceManager
 }
 
 // NewFromConfig loads a new Manager from a config file. This does not load the
@@ -110,9 +116,9 @@ func setup(m *Manager) (*Manager, error) {
 	var err error
 
 	m.Dir = filepath.Clean(m.Dir)
-	m.serviceManager, err = svcmgr.New(m.ServiceManager)
-	if err != nil {
-		return nil, err
+
+	if m.ServiceManager == "" {
+		m.ServiceManager = "dummy"
 	}
 
 	m.before, err = time.ParseDuration(m.Before)
@@ -132,14 +138,6 @@ func setup(m *Manager) (*Manager, error) {
 	return m, nil
 }
 
-// This defines the list of actions that the manager supports taking
-// on a service whose certificate has been updated.
-var validActions = map[string]bool{
-	"restart": true,
-	"reload":  true,
-	"nop":     true,
-}
-
 var validExtensions = map[string]bool{
 	".json": true,
 	".yaml": true,
@@ -152,6 +150,8 @@ func (m *Manager) Load() error {
 		log.Debugf("manager: certificates already loaded")
 		return nil
 	}
+
+	dummyMgr, _ := svcmgr.New("dummy", "", "")
 
 	log.Info("manager: loading certificates from ", m.Dir)
 	walker := func(path string, info os.FileInfo, err error) error {
@@ -177,17 +177,18 @@ func (m *Manager) Load() error {
 			return err
 		}
 
-		if cert.Action != "" {
-			if !validActions[cert.Action] {
-				return fmt.Errorf("manager: spec action '%s' is not supported", cert.Action)
-			}
-
-			if cert.Action != "nop" && cert.Service == "" {
-				return errors.New("manager: spec defines an action but not service")
-			}
+		s := cert.ServiceManager
+		if s == "" {
+			s = m.ServiceManager
 		}
-
-		m.Certs = append(m.Certs, cert)
+		manager := dummyMgr
+		if cert.Action != "" && cert.Action != "nop" {
+			manager, err = svcmgr.New(s, cert.Action, cert.Service)
+		}
+		if err != nil {
+			return err
+		}
+		m.Certs = append(m.Certs, &CertServiceManager{cert, manager})
 		metrics.WatchCount.Inc()
 		return nil
 	}
@@ -203,32 +204,20 @@ func (m *Manager) Load() error {
 
 	log.Infof("manager: watching %d certificates", len(m.Certs))
 
-	m.renew = make(chan *cert.Spec, len(m.Certs))
+	m.renew = make(chan *CertServiceManager, len(m.Certs))
 	return nil
 }
 
 // CheckCA checks the CA on the certificate and restarts the service
 // if needed.
-func (m *Manager) CheckCA(spec *cert.Spec) error {
+func (m *Manager) CheckCA(spec *CertServiceManager) error {
 	if changed, err := spec.CA.Refresh(); err != nil {
 		return err
 	} else if changed {
-		switch spec.Action {
-		case "restart":
-			log.Infof("manager: restarting service %s due to CA change",
-				spec.Service)
-			err = m.serviceManager.RestartService(spec.Service)
-		case "reload":
-			log.Infof("manager: reloading service %s due to CA change",
-				spec.Service)
-			err = m.serviceManager.ReloadService(spec.Service)
-		default:
-			// Nothing to do here.
-		}
+		err := spec.serviceManager.TakeAction()
 
 		if err != nil {
-			log.Errorf("manager: failed to %s service %s (err=%s)",
-				spec.Action, spec.Service, err)
+			log.Errorf("manager: %s", err)
 		}
 		return err
 	}
@@ -237,7 +226,7 @@ func (m *Manager) CheckCA(spec *cert.Spec) error {
 
 // Queue adds the spec to the renewal queue if it isn't already
 // queued.
-func (m *Manager) Queue(spec *cert.Spec) {
+func (m *Manager) Queue(spec *CertServiceManager) {
 	if spec.IsQueued() {
 		return
 	}
@@ -333,7 +322,7 @@ func (m *Manager) MustCheckCerts(tolerance int) error {
 	log.Infof("manager: ensuring all certificates exist and are ready (maximum %d tries)", tolerance)
 
 	type queuedCert struct {
-		cert     *cert.Spec
+		cert     *CertServiceManager
 		errcount int
 		err      error
 	}
@@ -421,7 +410,7 @@ func (m *Manager) SetExpiresNext() {
 // queue.
 const maxAttempts = 5
 
-func (m *Manager) renewCert(cert *cert.Spec) error {
+func (m *Manager) renewCert(cert *CertServiceManager) error {
 	start := time.Now()
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		log.Infof("manager: processing certificate spec %s (attempt %d)", cert, attempts+1)
@@ -452,7 +441,7 @@ func (m *Manager) renewCert(cert *cert.Spec) error {
 
 // refreshKeys attempts to renew the certificate, perform any service
 // management functions required, and update the metrics as needed.
-func (m *Manager) refreshKeys(cert *cert.Spec) {
+func (m *Manager) refreshKeys(cert *CertServiceManager) {
 	err := m.renewCert(cert)
 	if err != nil {
 		m.renew <- cert
@@ -461,21 +450,13 @@ func (m *Manager) refreshKeys(cert *cert.Spec) {
 	}
 
 	metrics.QueueCount.Dec()
-	switch cert.Action {
-	case "restart":
-		err = m.serviceManager.RestartService(cert.Service)
-	case "reload":
-		err = m.serviceManager.ReloadService(cert.Service)
-	default:
-		// Nothing to do here.
-	}
+	err = cert.serviceManager.TakeAction()
 
 	// Even though there was an error managing the service
 	// associated with the certificate, the certificate has been
 	// renewed.
 	if err != nil {
-		log.Errorf("manager: failed to %s service %s (err=%s)",
-			cert.Action, cert.Service, err)
+		log.Errorf("manager: %s", err)
 	}
 
 	cert.Dequeue()

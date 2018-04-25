@@ -3,9 +3,13 @@ package cli
 import (
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 
+	"github.com/cloudflare/certmgr/cert"
 	"github.com/cloudflare/certmgr/metrics"
 	"github.com/cloudflare/certmgr/mgr"
+	"github.com/cloudflare/certmgr/svcmgr"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -42,11 +46,17 @@ func root(cmd *cobra.Command, args []string) {
 		log.Fatalf("certmgr: %s", err)
 	}
 
+	// bit of a hack- metrics should instead see the mgr
+	// so changes in certs count are properly reflected.
+	certs := []*cert.Spec{}
+	for _, x := range mgr.Certs {
+		certs = append(certs, x.Spec)
+	}
 	metrics.Start(
 		viper.GetString("metrics_address"),
 		viper.GetString("metrics_port"),
 		viper.GetString("index_extra_html"),
-		mgr.Certs,
+		certs,
 	)
 	mgr.Server(sync)
 }
@@ -70,7 +80,12 @@ func init() {
 
 	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "f", "", "config file (default is /etc/certmgr/certmgr.yaml)")
 	RootCmd.PersistentFlags().StringVarP(&manager.Dir, "dir", "d", "", "directory containing certificate specs")
-	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", "service manager (one of systemd, sysv, circus, openrc, or dummy)")
+	backends := []string{}
+	for backend := range svcmgr.SupportedBackends {
+		backends = append(backends, backend)
+	}
+	sort.Strings(backends)
+	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", fmt.Sprintf("service manager, must be one of: %s", strings.Join(backends, ", ")))
 	RootCmd.PersistentFlags().StringVarP(&manager.Before, "before", "t", "", "how long before certificates expire to start renewing (in the form Nh)")
 	RootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug mode")
 	RootCmd.Flags().BoolVarP(&sync, "sync", "s", false, "the first certificate check should be synchronous")
