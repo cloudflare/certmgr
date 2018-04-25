@@ -37,7 +37,6 @@ type CA struct {
 	AuthKeyFile string `json:"auth_key_file" yaml:"auth_key_file"`
 	File        *File  `json:"file,omitempty" yaml:"file,omitempty"`
 	pem         []byte
-	loaded      bool
 }
 
 func (ca *CA) getRemoteCert() ([]byte, error) {
@@ -71,30 +70,18 @@ func (ca *CA) writeCert(cert []byte) error {
 		return err
 	}
 
-	maybeExisting, err := ioutil.ReadFile(ca.File.Path)
-	if err == nil {
-		if !bytes.Equal(maybeExisting, cert) {
-			err = ioutil.WriteFile(ca.File.Path, cert, 0644)
-			if err != nil {
-				return err
-			}
-			log.Infof("cert: wrote CA certificate: %s", ca.File.Path)
-		} else {
-			log.Infof("cert: existing CA certificate at %s is current, won't overwrite",
-				ca.File.Path)
-		}
-	} else if os.IsNotExist(err) {
-		err = ioutil.WriteFile(ca.File.Path, cert, 0644)
-		if err != nil {
-			return err
-		}
-		log.Infof("cert: wrote CA certificate: %s", ca.File.Path)
+	// add a trailing newline for humans
+	if !bytes.HasSuffix(cert, []byte{'\n'}) {
+		cert = append(cert, '\n')
 	}
-
+	err = ioutil.WriteFile(ca.File.Path, cert, 0644)
 	if err != nil {
 		return err
 	}
+	log.Infof("cert: wrote CA certificate: %s", ca.File.Path)
 
+	// see CA.Load(); strip prefix/trailing whitespace to ensure our bytes.Equal() checks don't false positive.
+	ca.pem = []byte(strings.TrimSpace(string(cert[:])))
 	err = ca.File.Set()
 	return err
 }
@@ -117,35 +104,36 @@ func (ca *CA) Load() error {
 		return nil
 	}
 
-	err = ca.writeCert(cert)
-	if err != nil {
+	ca.pem, err = ioutil.ReadFile(ca.File.Path)
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	// strip prefix/suffix whitespace since what we get back from remote doesn't have that.
+	ca.pem = []byte(strings.TrimSpace(string(ca.pem[:])))
 
-	ca.loaded = true
 	return nil
 }
 
 // Refresh fetches the latest CA cert. If it has changed, write the
 // new CA cert and return true.
-func (ca *CA) Refresh() (changed bool, err error) {
+func (ca *CA) Refresh() (bool, error) {
 	cert, err := ca.getRemoteCert()
 	if err != nil {
-		return
+		return false, err
 	}
 
 	if bytes.Equal(cert, ca.pem) {
-		return
-	}
-	changed = true
-
-	if ca.File == nil {
-		return
+		if ca.File != nil {
+			log.Infof("cert: existing CA certificate at %s is current", ca.File.Path)
+		}
+		return false, nil
 	}
 
-	ca.pem = cert
-	err = ca.writeCert(ca.pem)
-	return
+	if ca.File != nil {
+		err = ca.writeCert(cert)
+	}
+
+	return true, err
 }
 
 func displayName(name pkix.Name) string {
