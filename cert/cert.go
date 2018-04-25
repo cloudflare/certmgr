@@ -29,15 +29,15 @@ import (
 // to use this: fill out Name to refer to a global CA (e.g. as defined
 // in the config file) or fill out Remote, Label, Profile, and AuthKey.
 type CA struct {
-	Name    string `json:"name" yaml:"name"`
-	Remote  string `json:"remote" yaml:"remote"`
-	Label   string `json:"label" yaml:"label"`
-	Profile string `json:"profile" yaml:"profile"`
-	AuthKey string `json:"auth_key" yaml:"auth_key"`
+	Name        string `json:"name" yaml:"name"`
+	Remote      string `json:"remote" yaml:"remote"`
+	Label       string `json:"label" yaml:"label"`
+	Profile     string `json:"profile" yaml:"profile"`
+	AuthKey     string `json:"auth_key" yaml:"auth_key"`
 	AuthKeyFile string `json:"auth_key_file" yaml:"auth_key_file"`
-	File    *File  `json:"file,omitempty" yaml:"file,omitempty"`
-	pem     []byte
-	loaded  bool
+	File        *File  `json:"file,omitempty" yaml:"file,omitempty"`
+	pem         []byte
+	loaded      bool
 }
 
 func (ca *CA) getRemoteCert() ([]byte, error) {
@@ -185,6 +185,13 @@ func displayName(name pkix.Name) string {
 // A Spec contains information needed to monitor and renew a
 // certificate.
 type Spec struct {
+
+	// This defines the service manager to use.  This should be defined
+	// globally rather than per cert- it's allowed here to allow cert
+	// definitions to use a servicemanager of 'command' to allow freeform
+	// invocations.
+	ServiceManager string `json:"svcmgr" yaml:"svcmgr"`
+
 	// The service is the service that uses this certificate. If
 	// this field is not empty, the action below will be applied
 	// to this service upon certificate renewal. It can also be

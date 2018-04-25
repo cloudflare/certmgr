@@ -157,6 +157,9 @@ A certificate spec has the following fields:
   should be applied to.
 * `action`: this is optional, and may be one of "restart", "reload",
   or "nop".
+* `svcmgr`: this is optional, and defaults to whatever the global
+  config defines.  This allows fine grained control for specifying the
+  svcmgr per cert.
 * `request`: a CFSSL certificate request (see below).
 * `private_key` and `certificate`: file specifications (see below) for
   the private key and certificate.
