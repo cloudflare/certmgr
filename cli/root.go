@@ -79,7 +79,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "f", "", "config file (default is /etc/certmgr/certmgr.yaml)")
-	RootCmd.PersistentFlags().StringVarP(&manager.Dir, "dir", "d", "", "directory containing certificate specs")
+	RootCmd.PersistentFlags().StringVarP(&manager.Dir, "dir", "d", "", "either the directory containing certificate specs, or the path to the spec file you wish to operate on")
 	backends := []string{}
 	for backend := range svcmgr.SupportedBackends {
 		backends = append(backends, backend)

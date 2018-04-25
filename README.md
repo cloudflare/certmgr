@@ -228,12 +228,16 @@ In addition to the certificate manager, there are a few utility
 functions specified:
 
 * `check`: validates the configuration file and all the certificate
-  specs available in the certificate spec directory.
+  specs available in the certificate spec directory.  Note that if you
+  wish to operate on just one spec, you can use `-d /path/to/that/spec`
+  to accomplish it.
 * `clean`: removes all of the certificates and private keys specified
-  by the certificate specs.
+  by the certificate specs.  Note that if you wish to operate on just one spec,
+  you can use `-d /path/to/that/spec` to accomplish it.
 * `ensure`: attempts to load all certificate specs, and ensure that
   the TLS key pairs they identify exist, are valid, and that they are
-  up-to-date.
+  up-to-date.  Note that if you wish to operate on just one spec, you
+  can use `-d /path/to/that/spec` to accomplish this.
 * `genconfig`: generates a default configuration file and ensures the
   default service directory exists.
 * `version`: prints certificate manager's version, the version of Go
