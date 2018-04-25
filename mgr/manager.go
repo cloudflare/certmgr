@@ -28,6 +28,16 @@ type CertServiceManager struct {
 	serviceManager svcmgr.Manager
 }
 
+func (csm *CertServiceManager) TakeAction(change_type string) error {
+	ca_path := ""
+	if csm.CA.File != nil {
+		ca_path = csm.CA.File.Path
+	}
+	cert_path := csm.Cert.Path
+	key_path := csm.Key.Path
+	return csm.serviceManager.TakeAction(change_type, csm.Path, ca_path, cert_path, key_path)
+}
+
 // The Manager structure contains the certificates to be managed. A
 // manager needs to be constructed with one of the New functions, and
 // should not be constructed by hand.
@@ -214,7 +224,7 @@ func (m *Manager) CheckCA(spec *CertServiceManager) error {
 	if changed, err := spec.CA.Refresh(); err != nil {
 		return err
 	} else if changed {
-		err := spec.serviceManager.TakeAction()
+		err := spec.TakeAction("CA")
 
 		if err != nil {
 			log.Errorf("manager: %s", err)
@@ -450,7 +460,7 @@ func (m *Manager) refreshKeys(cert *CertServiceManager) {
 	}
 
 	metrics.QueueCount.Dec()
-	err = cert.serviceManager.TakeAction()
+	err = cert.TakeAction("key")
 
 	// Even though there was an error managing the service
 	// associated with the certificate, the certificate has been

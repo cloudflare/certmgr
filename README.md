@@ -87,8 +87,9 @@ This contains all of the currently available parameters:
 * `dir`: this specifies the directory containing the certificate specs
 * `svcmgr`: this specifies the service manager to use for restarting
   or reloading services. This can be `systemd` (using `systemctl`),
-  `sysv` (using `service`), `circus` (using `circusctl`), `openrc` (using `rc-service`)
-  or `dummy` (no restart/reload behavior).
+  `sysv` (using `service`), `circus` (using `circusctl`), `openrc` (using `rc-service`),
+  `dummy` (no restart/reload behavior), or `command` (see the command svcmgr section
+  for details of how to use this).
 * `before`: this is the interval before a certificate expires to start
   attempting to renew it.
 * `interval`: this controls how often to check certificate expirations
@@ -159,7 +160,9 @@ A certificate spec has the following fields:
   or "nop".
 * `svcmgr`: this is optional, and defaults to whatever the global
   config defines.  This allows fine grained control for specifying the
-  svcmgr per cert.
+  svcmgr per cert.  If you're using this in a raw certificate definition,
+  you likely want the 'command' svcmgr- see that section for details of
+  how to use it.
 * `request`: a CFSSL certificate request (see below).
 * `private_key` and `certificate`: file specifications (see below) for
   the private key and certificate.
@@ -199,6 +202,25 @@ The CA specification contains the following fields:
 * `profile`: the CA profile that should be used.
 * `file`: if this is included, the CA certificate will be saved here. It
   follows the same file specification format above.
+
+## `command svcmgr` and how to use it
+
+If the svcmgr is set to `command`, then `action` is interpretted as a
+shell snippet to invoke via  `bash -c`.  Bash is preferred since
+it allows parse checks to be ran- if bash isn't available, parse checks
+are skipped and `sh -c` is used.  If `sh` can't be found, then this svcmgr
+is disabled.
+
+Environment variables are set as follows:
+
+* CERTMGR_CHANGE_TYPE: either 'CA' or 'key'.  This indicates if the CA
+  changes, or if it's just a cert renewal.
+* CERTMGR_CA_PATH: if CA was configured for the spec, this is the path
+  to the CA ondisk that was changed.
+* CERTMGR_CERT_PATH: This is the path to the cert that was written.
+* CERTMGR_KEY_PATH: This is the path to the key that was written.
+* CERTMGR_SPEC_PATH: This is the path to the cert spec definition that
+  was just refreshed.
 
 ## Subcommands
 

@@ -7,6 +7,7 @@ package svcmgr
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 
 	"github.com/cloudflare/cfssl/log"
@@ -26,11 +27,16 @@ var defaultValidActions = map[string]bool{
 // The Manager interface provides a common API for interacting with
 // service managers.
 type Manager interface {
-	TakeAction() error
+	TakeAction(change_type string, spec_path string, ca_path string, cert_path string, key_path string) error
 }
 
 func run(prog string, args ...string) error {
+	return runEnv([]string{}, prog, args...)
+}
+
+func runEnv(env []string, prog string, args ...string) error {
 	cmd := exec.Command(prog, args...)
+	cmd.Env = append(os.Environ(), env...)
 	log.Debugf("running '%s %v'", prog, args)
 	return cmd.Run()
 }
@@ -57,7 +63,7 @@ type simpleManager struct {
 	service        string
 }
 
-func (sm simpleManager) TakeAction() error {
+func (sm simpleManager) TakeAction(string, string, string, string, string) error {
 	log.Infof("%ving service %v", sm.action, sm.service)
 	if sm.action_is_last {
 		return run(sm.binary, sm.service, sm.action)
@@ -87,7 +93,7 @@ func registerSimpleManager(binary string, action_is_last bool) managerCreator {
 
 type dummyManager struct{}
 
-func (dummyManager) TakeAction() error {
+func (dummyManager) TakeAction(string, string, string, string, string) error {
 	return nil
 }
 func newDummyManager(action string, service string) (Manager, error) {
