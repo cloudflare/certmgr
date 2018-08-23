@@ -4,6 +4,7 @@ package cert
 
 import (
 	"bytes"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -36,11 +37,29 @@ type CA struct {
 	AuthKey     string `json:"auth_key" yaml:"auth_key"`
 	AuthKeyFile string `json:"auth_key_file" yaml:"auth_key_file"`
 	File        *File  `json:"file,omitempty" yaml:"file,omitempty"`
+	RootCACert  string `json:"root_ca,omitempty" yaml:"root_ca,omitempty"`
 	pem         []byte
 }
 
 func (ca *CA) getRemoteCert() ([]byte, error) {
-	remote := client.NewServer(ca.Remote)
+	var tlsConfig tls.Config
+	if len(ca.RootCACert) > 0 {
+		rootCABytes, err := ioutil.ReadFile(ca.RootCACert)
+		if err != nil {
+			return nil, err
+		}
+
+		rootCaCertPool := x509.NewCertPool()
+		ok := rootCaCertPool.AppendCertsFromPEM(rootCABytes)
+		if !ok {
+			return nil, errors.New("failed to parse rootCA certs")
+		}
+		tlsConfig = tls.Config{
+			RootCAs: rootCaCertPool,
+		}
+	}
+
+	remote := client.NewServerTLS(ca.Remote, &tlsConfig)
 	infoReq := &info.Req{
 		Label:   ca.Label,
 		Profile: ca.Profile,
@@ -236,17 +255,19 @@ func (spec *Spec) Identity() (*core.Identity, error) {
 			&core.Root{
 				Type: "cfssl",
 				Metadata: map[string]string{
-					"host":    spec.CA.Remote,
-					"profile": spec.CA.Profile,
-					"label":   spec.CA.Label,
+					"host":          spec.CA.Remote,
+					"profile":       spec.CA.Profile,
+					"label":         spec.CA.Label,
+					"tls-remote-ca": spec.CA.RootCACert,
 				},
 			},
 		},
 		Profiles: map[string]map[string]string{
 			"cfssl": map[string]string{
-				"remote":  spec.CA.Remote,
-				"profile": spec.CA.Profile,
-				"label":   spec.CA.Label,
+				"remote":        spec.CA.Remote,
+				"profile":       spec.CA.Profile,
+				"label":         spec.CA.Label,
+				"tls-remote-ca": spec.CA.RootCACert,
 			},
 			"paths": map[string]string{
 				"private_key": spec.Key.Path,
