@@ -43,7 +43,7 @@ type CA struct {
 
 func (ca *CA) getRemoteCert() ([]byte, error) {
 	var tlsConfig tls.Config
-	if len(ca.RootCACert) > 0 {
+	if ca.RootCACert != "" {
 		rootCABytes, err := ioutil.ReadFile(ca.RootCACert)
 		if err != nil {
 			return nil, err
