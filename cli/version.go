@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-var currentVersion = "1.6.1"
+var currentVersion = "1.6.2"
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
