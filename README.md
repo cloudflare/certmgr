@@ -1,5 +1,7 @@
 # certmgr
 
+[![Build Status](https://travis-ci.org/cloudflare/certmgr.svg?branch=master)](https://travis-ci.org/cloudflare/certmgr)
+
 certmgr is a tool for managing certificates using CFSSL. It does the
 following:
 
