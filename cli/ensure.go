@@ -8,6 +8,7 @@ import (
 )
 
 var ensureTolerance = 3
+var enableActions = false
 
 var ensureCmd = &cobra.Command{
 	Use:   "ensure",
@@ -30,7 +31,7 @@ func Ensure(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	err = mgr.MustCheckCerts(ensureTolerance)
+	err = mgr.MustCheckCerts(ensureTolerance, enableActions)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		os.Exit(1)
@@ -42,4 +43,5 @@ func Ensure(cmd *cobra.Command, args []string) {
 func init() {
 	RootCmd.AddCommand(ensureCmd)
 	ensureCmd.Flags().IntVarP(&ensureTolerance, "tries", "n", ensureTolerance, "number of times to retry refreshing a certificate")
+	ensureCmd.Flags().BoolVarP(&enableActions, "enableActions", "", enableActions, "if passed, run the certificates svcmgr actions; defaults to not running them")
 }

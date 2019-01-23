@@ -325,7 +325,7 @@ func (m *Manager) CheckCertsSync() int {
 // MustCheckCerts acts like CheckCerts, except it's synchronous and
 // has a maxmimum number of failures that are tolerated. If tolerate
 // is less than 1, it will be set to 1.
-func (m *Manager) MustCheckCerts(tolerance int) error {
+func (m *Manager) MustCheckCerts(tolerance int, enableActions bool) error {
 	if tolerance < 1 {
 		tolerance = 1
 	}
@@ -378,6 +378,17 @@ func (m *Manager) MustCheckCerts(tolerance int) error {
 			continue
 		}
 		log.Infof("manager: certificate spec %s successfully processed", cert.cert.Path)
+		if enableActions {
+			log.Debug("taking action due to key refresh")
+			err := cert.cert.TakeAction("key")
+
+			// Even though there was an error managing the service
+			// associated with the certificate, the certificate has been
+			// renewed.
+			if err != nil {
+				log.Errorf("manager: %s", err)
+			}
+		}
 
 		if len(queue) == 0 {
 			log.Infof("manager: certificate queue is clear")
