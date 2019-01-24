@@ -419,10 +419,15 @@ func (spec *Spec) Lifespan() time.Duration {
 	}
 	if isTooOld(spec.Key.Path) || isTooOld(spec.Cert.Path) {
 		// This is necessary to essentially force cfssl to regenerate since it's not spec aware.
-		spec.tr.Provider.Certificate().NotAfter = specStat.ModTime()
+		spec.ResetLifespan()
 		return 0
 	}
 	return spec.tr.Lifespan()
+}
+
+// Reset the lifespan to force cfssl to regenerate
+func (spec *Spec) ResetLifespan() {
+	spec.tr.Provider.Certificate().NotAfter = time.Time{}
 }
 
 // Certificate returns the x509.Certificate associated with the spec

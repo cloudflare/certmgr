@@ -325,7 +325,7 @@ func (m *Manager) CheckCertsSync() int {
 // MustCheckCerts acts like CheckCerts, except it's synchronous and
 // has a maxmimum number of failures that are tolerated. If tolerate
 // is less than 1, it will be set to 1.
-func (m *Manager) MustCheckCerts(tolerance int, enableActions bool) error {
+func (m *Manager) MustCheckCerts(tolerance int, enableActions bool, forceRegen bool) error {
 	if tolerance < 1 {
 		tolerance = 1
 	}
@@ -344,6 +344,12 @@ func (m *Manager) MustCheckCerts(tolerance int, enableActions bool) error {
 			log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", m.Certs[i])
 		}
 
+		if forceRegen {
+			log.Debugf("manager: forcing regeneration of spec %s", m.Certs[i])
+			m.Certs[i].ResetLifespan()
+			queue <- &queuedCert{cert: m.Certs[i]}
+			continue
+		}
 		if !m.Certs[i].Ready() && !m.Certs[i].IsQueued() {
 			queue <- &queuedCert{cert: m.Certs[i]}
 			continue
