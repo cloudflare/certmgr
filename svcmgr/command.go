@@ -32,6 +32,7 @@ func newCommandManager(action string, service string) (Manager, error) {
 		log.Warningf("svcmgr 'command': service '%s' for action '%s' doesn't do anything, ignoring", service, action)
 	}
 	if canCheckSyntax {
+		log.Debugf("svcmgr 'command': validating the action definition %s", action)
 		err := run(shellBinary, "-n", "-c", action)
 		if err != nil {
 			return nil, fmt.Errorf("svcmgr 'command': action '%s' failed bash -n -c parse checks: %s", action, err)
