@@ -29,6 +29,7 @@ type CertServiceManager struct {
 }
 
 func (csm *CertServiceManager) TakeAction(change_type string) error {
+	log.Infof("manager: executing configured action due to change type %s for %s", change_type, csm.Cert.Path)
 	ca_path := ""
 	if csm.CA.File != nil {
 		ca_path = csm.CA.File.Path

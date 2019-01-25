@@ -80,8 +80,6 @@ func (ca *CA) writeCert(cert []byte) error {
 	}
 	log.Infof("cert: wrote CA certificate: %s", ca.File.Path)
 
-	// see CA.Load(); strip prefix/trailing whitespace to ensure our bytes.Equal() checks don't false positive.
-	ca.pem = []byte(strings.TrimSpace(string(cert[:])))
 	err = ca.File.Set()
 	return err
 }
@@ -131,6 +129,11 @@ func (ca *CA) Refresh() (bool, error) {
 
 	if ca.File != nil {
 		err = ca.writeCert(cert)
+	}
+	// If there were no errors, update our internal notion of what the CA is.
+	if err != nil {
+		// see CA.Load(); strip prefix/trailing whitespace to ensure our bytes.Equal() checks don't false positive.
+		ca.pem = []byte(strings.TrimSpace(string(cert[:])))
 	}
 
 	return true, err
