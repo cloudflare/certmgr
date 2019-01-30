@@ -327,7 +327,7 @@ func (m *Manager) Load(forced bool) error {
 	}
 
 	if len(m.Certs) == 0 {
-		return errors.New("manager: no certificate specs found")
+		log.Warning("manager: no certificate specs found")
 	}
 
 	log.Infof("manager: watching %d certificates", len(m.Certs))

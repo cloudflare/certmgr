@@ -18,6 +18,7 @@ import (
 var cfgFile string
 var logLevel string
 var debug, sync bool
+var requireSpecs bool
 
 var manager struct {
 	Dir            string
@@ -44,6 +45,10 @@ func root(cmd *cobra.Command, args []string) {
 	err = mgr.Load(false)
 	if err != nil {
 		log.Fatalf("certmgr: %s", err)
+	}
+
+	if requireSpecs && len(mgr.Certs) == 0 {
+		log.Fatal("certmgr: no specs were found, and --requireSpecs was passed")
 	}
 
 	// bit of a hack- metrics should instead see the mgr
@@ -90,6 +95,7 @@ func init() {
 	RootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug mode")
 	RootCmd.Flags().BoolVarP(&sync, "sync", "s", false, "the first certificate check should be synchronous")
 	RootCmd.Flags().MarkHidden("sync")
+	RootCmd.Flags().BoolVarP(&requireSpecs, "requireSpecs", "", false, "fail the daemon startup if no specs were found in the directory to watch")
 
 	viper.BindPFlag("dir", RootCmd.PersistentFlags().Lookup("dir"))
 	viper.BindPFlag("svcmgr", RootCmd.PersistentFlags().Lookup("svcmgr"))
