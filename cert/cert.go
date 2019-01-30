@@ -42,7 +42,7 @@ type CA struct {
 }
 
 func (ca *CA) getRemoteCert() ([]byte, error) {
-	var tlsConfig tls.Config
+	var tlsConfig *tls.Config
 	if ca.RootCACert != "" {
 		rootCABytes, err := ioutil.ReadFile(ca.RootCACert)
 		if err != nil {
@@ -54,12 +54,12 @@ func (ca *CA) getRemoteCert() ([]byte, error) {
 		if !ok {
 			return nil, errors.New("failed to parse rootCA certs")
 		}
-		tlsConfig = tls.Config{
+		tlsConfig = &tls.Config{
 			RootCAs: rootCaCertPool,
 		}
 	}
 
-	remote := client.NewServerTLS(ca.Remote, &tlsConfig)
+	remote := client.NewServerTLS(ca.Remote, tlsConfig)
 	infoReq := &info.Req{
 		Label:   ca.Label,
 		Profile: ca.Profile,
