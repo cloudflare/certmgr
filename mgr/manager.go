@@ -650,7 +650,7 @@ func (m *Manager) Server(sync bool) {
 	if sync {
 		failed := m.CheckCertsSync()
 		if failed != 0 {
-			log.Infof("manager: failed to provision %d certs (certs are queued)")
+			log.Errorf("manager: failed to provision %d certs (certs are queued)")
 		}
 	} else {
 		m.CheckCerts()
