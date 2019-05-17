@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -37,6 +38,18 @@ type CA struct {
 	AuthKeyFile string `json:"auth_key_file" yaml:"auth_key_file"`
 	File        *File  `json:"file,omitempty" yaml:"file,omitempty"`
 	pem         []byte
+}
+
+// GetPEM is for testing only!
+// Getter for CA cert PEM
+func (ca *CA) GetPEM() []byte {
+	return ca.pem
+}
+
+// SetPEM is for testing only!
+// Setter for CA cert PEM
+func (ca *CA) SetPEM(pem []byte) {
+	ca.pem = pem
 }
 
 func (ca *CA) getRemoteCert() ([]byte, error) {
@@ -106,9 +119,6 @@ func (ca *CA) Load() error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	// strip prefix/suffix whitespace since what we get back from remote doesn't have that.
-	ca.pem = []byte(strings.TrimSpace(string(ca.pem[:])))
-
 	return nil
 }
 
@@ -120,23 +130,49 @@ func (ca *CA) Refresh() (bool, error) {
 		return false, err
 	}
 
-	if bytes.Equal(cert, ca.pem) {
+	isCACertSame, err := CompareCertificates(cert, ca.pem)
+	if err != nil {
+		log.Infof("cert: error comparing CA certificates")
+		return false, err
+	}
+
+	if isCACertSame {
 		if ca.File != nil {
 			log.Infof("cert: existing CA certificate at %s is current", ca.File.Path)
 		}
 		return false, nil
 	}
 
+	// If CA cert has changed, write out new CA cert
 	if ca.File != nil {
 		err = ca.writeCert(cert)
 	}
 	// If there were no errors, update our internal notion of what the CA is.
 	if err != nil {
-		// see CA.Load(); strip prefix/trailing whitespace to ensure our bytes.Equal() checks don't false positive.
-		ca.pem = []byte(strings.TrimSpace(string(cert[:])))
+		ca.pem = cert
 	}
-
 	return true, err
+}
+
+// CompareCertificates x509 compares two CA certificates
+func CompareCertificates(cert1, cert2 []byte) (bool, error) {
+	p1, _ := pem.Decode(cert1)
+	if p1 == nil {
+		return false, errors.New("Unable to pem decode certificate")
+	}
+	parsedCert1, err := x509.ParseCertificate(p1.Bytes)
+	if err != nil {
+		return false, err
+	}
+	p2, _ := pem.Decode(cert2)
+	if p2 == nil {
+		return false, errors.New("Unable to pem decode certificate")
+	}
+	parsedCert2, err := x509.ParseCertificate(p2.Bytes)
+	if err != nil {
+		return false, err
+	}
+	return (parsedCert1.Equal(parsedCert2)), nil
 }
 
 func displayName(name pkix.Name) string {
