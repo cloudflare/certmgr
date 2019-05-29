@@ -38,6 +38,12 @@ func Ensure(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	err = mgr.CheckDiskPKI()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
+		os.Exit(1)
+	}
+
 	fmt.Println("OK")
 }
 

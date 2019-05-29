@@ -1,12 +1,16 @@
 package mgr
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	"github.com/cloudflare/certmgr/cert"
@@ -153,6 +157,119 @@ var validExtensions = map[string]bool{
 	".json": true,
 	".yaml": true,
 	".yml":  true,
+}
+
+// CheckImpendingExpiry checks if a certificate will expire in <=24 hours and alerts on it
+// TODO: HOW DO I TEST THIS???
+func (m *Manager) CheckImpendingExpiry() error {
+	if m.Certs == nil || len(m.Certs) == 0 {
+		return nil
+	}
+	for i := range m.Certs {
+		certPath := m.Certs[i].Spec.Cert.Path
+		certData, err := ioutil.ReadFile(certPath)
+		if err != nil {
+			return err
+		}
+		p, _ := pem.Decode(certData)
+		if p == nil {
+			return errors.New("Unable to pem decode certificate on disk")
+		}
+		cert, err := x509.ParseCertificate(p.Bytes)
+		if err != nil {
+			return err
+		}
+
+		// Get expiry of cert on disk, alert on mismatch or if it's in <1 day
+		expiryTime := cert.NotAfter
+		diff := expiryTime.Sub(time.Now())
+		if diff.Hours() <= 24 {
+			fmt.Println("ALERT! CERTIFICATE ON DISK WITH EXPIRE IN <=24 HOURS")
+			return errors.New("manager: Expiry will occur within day")
+		}
+	}
+	return nil
+}
+
+// CheckDiskPKI checks the PKI information on disk against cert spec and alerts upon differences
+// Specifically, it checks that private key on disk matches spec algorithm & keysize,
+// and certificate  on disk matches CSR spec info
+func (m *Manager) CheckDiskPKI() error {
+
+	if m.Certs == nil || len(m.Certs) == 0 {
+		return nil
+	}
+
+	// Iterate through certificates. Compare what's on disk to what's structurally stored
+	for i := range m.Certs {
+		csm := m.Certs[i]
+		certPath := csm.Spec.Cert.Path
+		keyPath := csm.Spec.Key.Path
+		csrRequest := csm.Spec.Request
+
+		// Read private key algorithm and keysize from disk, determine if RSA or ECDSA
+		keyData, err := ioutil.ReadFile(keyPath)
+		if err != nil {
+			return err
+		}
+		pemKey, _ := pem.Decode(keyData)
+		if pemKey == nil {
+			return errors.New("Unable to pem decode private key on disk")
+		}
+
+		var algDisk string
+		var sizeDisk int
+		privKey, err := x509.ParsePKCS1PrivateKey(pemKey.Bytes)
+		if err != nil {
+			privKey, err := x509.ParseECPrivateKey(pemKey.Bytes)
+			if err != nil {
+				// If we get here, then invalid key type
+				return errors.New("manager: Unable to parse private key algorithm from disk")
+			}
+			// If we get here, then it's ECDSA
+			algDisk = "ecdsa"
+			sizeDisk = privKey.Curve.Params().BitSize
+		} else {
+			//If we get here, then it's RSA
+			algDisk = "rsa"
+			sizeDisk = privKey.N.BitLen()
+		}
+
+		// Check algorithm and keysize of private key on disk against what's defined in spec
+		algSpec := csrRequest.KeyRequest.Algo()
+		sizeSpec := csrRequest.KeyRequest.Size()
+
+		if algDisk != algSpec {
+			fmt.Printf("ALERT! ALGORITHM TYPES DON'T MATCH: disk alg is %s but spec alg is %s\n", algDisk, algSpec)
+		}
+		if sizeDisk != sizeSpec {
+			fmt.Printf("ALERT! KEY SIZES DON'T MATCH: disk key size is %d but spec key size is %d\n", sizeDisk, sizeSpec)
+		}
+
+		// Check that certificate values match spec
+		certData, err := ioutil.ReadFile(certPath)
+		if err != nil {
+			return err
+		}
+		p, _ := pem.Decode(certData)
+		if p == nil {
+			return errors.New("Unable to pem decode certificate on disk")
+		}
+		cert, err := x509.ParseCertificate(p.Bytes)
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(csrRequest.Hosts, cert.DNSNames) {
+			fmt.Println("ALERT: DNS NAMES OF CERT ON DISK DON'T MATCH UP WITH SPEC")
+		}
+
+		// Check if cert and key are valid pair
+		tlsCert, err := tls.X509KeyPair(certData, keyData)
+		if err != nil || tlsCert.Leaf != nil {
+			fmt.Println("ALERT: CERTIFICATE AND PRIVATE KEY ON DISK ARE NOT A VALID KEYPAIR")
+		}
+	}
+	return nil
 }
 
 // Load reads the certificate specs from the spec directory.
