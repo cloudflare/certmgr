@@ -17,7 +17,6 @@ import (
 	"github.com/cloudflare/certmgr/metrics"
 	"github.com/cloudflare/certmgr/svcmgr"
 	"github.com/cloudflare/cfssl/log"
-
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -40,6 +39,7 @@ func (csm *CertServiceManager) TakeAction(change_type string) error {
 	}
 	cert_path := csm.Cert.Path
 	key_path := csm.Key.Path
+	metrics.ActionCount.WithLabelValues(csm.Cert.Path, change_type).Inc()
 	return csm.serviceManager.TakeAction(change_type, csm.Path, ca_path, cert_path, key_path)
 }
 
@@ -149,7 +149,6 @@ func setup(m *Manager) (*Manager, error) {
 			return nil, err
 		}
 	}
-
 	return m, nil
 }
 
@@ -157,38 +156,6 @@ var validExtensions = map[string]bool{
 	".json": true,
 	".yaml": true,
 	".yml":  true,
-}
-
-// CheckImpendingExpiry checks if a certificate will expire in <=24 hours and alerts on it
-// TODO: HOW DO I TEST THIS???
-func (m *Manager) CheckImpendingExpiry() error {
-	if m.Certs == nil || len(m.Certs) == 0 {
-		return nil
-	}
-	for i := range m.Certs {
-		certPath := m.Certs[i].Spec.Cert.Path
-		certData, err := ioutil.ReadFile(certPath)
-		if err != nil {
-			return err
-		}
-		p, _ := pem.Decode(certData)
-		if p == nil {
-			return errors.New("Unable to pem decode certificate on disk")
-		}
-		cert, err := x509.ParseCertificate(p.Bytes)
-		if err != nil {
-			return err
-		}
-
-		// Get expiry of cert on disk, alert on mismatch or if it's in <1 day
-		expiryTime := cert.NotAfter
-		diff := expiryTime.Sub(time.Now())
-		if diff.Hours() <= 24 {
-			fmt.Println("ALERT! CERTIFICATE ON DISK WITH EXPIRE IN <=24 HOURS")
-			return errors.New("manager: Expiry will occur within day")
-		}
-	}
-	return nil
 }
 
 // CheckDiskPKI checks the PKI information on disk against cert spec and alerts upon differences
@@ -205,6 +172,7 @@ func (m *Manager) CheckDiskPKI() error {
 		csm := m.Certs[i]
 		certPath := csm.Spec.Cert.Path
 		keyPath := csm.Spec.Key.Path
+		specPath := csm.Spec.Path
 		csrRequest := csm.Spec.Request
 
 		// Read private key algorithm and keysize from disk, determine if RSA or ECDSA
@@ -240,13 +208,20 @@ func (m *Manager) CheckDiskPKI() error {
 		sizeSpec := csrRequest.KeyRequest.Size()
 
 		if algDisk != algSpec {
-			fmt.Printf("ALERT! ALGORITHM TYPES DON'T MATCH: disk alg is %s but spec alg is %s\n", algDisk, algSpec)
-		}
-		if sizeDisk != sizeSpec {
-			fmt.Printf("ALERT! KEY SIZES DON'T MATCH: disk key size is %d but spec key size is %d\n", sizeDisk, sizeSpec)
+			metrics.AlgorithmMismatchCount.WithLabelValues(specPath).Set(1)
+			fmt.Printf("ALERT: disk alg is %s but spec alg is %s\n", algDisk, algSpec)
+		} else {
+			metrics.AlgorithmMismatchCount.WithLabelValues(specPath).Set(0)
 		}
 
-		// Check that certificate values match spec
+		if sizeDisk != sizeSpec {
+			metrics.KeysizeMismatchCount.WithLabelValues(specPath).Set(1)
+			fmt.Printf("ALERT: disk key size is %d but spec key size is %d\n", sizeDisk, sizeSpec)
+		} else {
+			metrics.KeysizeMismatchCount.WithLabelValues(specPath).Set(0)
+		}
+
+		// Check that certificate hostnames match spec hostnames
 		certData, err := ioutil.ReadFile(certPath)
 		if err != nil {
 			return err
@@ -260,23 +235,33 @@ func (m *Manager) CheckDiskPKI() error {
 			return err
 		}
 		if !reflect.DeepEqual(csrRequest.Hosts, cert.DNSNames) {
-			fmt.Println("ALERT: DNS NAMES OF CERT ON DISK DON'T MATCH UP WITH SPEC")
+			metrics.HostnameMismatchCount.WithLabelValues(specPath).Set(1)
+			fmt.Println("ALERT: DNS names in cert on disk don't match with hostnames in spec")
+		} else {
+			metrics.HostnameMismatchCount.WithLabelValues(specPath).Set(0)
 		}
 
 		// Check if cert and key are valid pair
 		tlsCert, err := tls.X509KeyPair(certData, keyData)
 		if err != nil || tlsCert.Leaf != nil {
-			fmt.Println("ALERT: CERTIFICATE AND PRIVATE KEY ON DISK ARE NOT A VALID KEYPAIR")
+			metrics.KeypairMismatchCount.WithLabelValues(specPath).Set(1)
+			fmt.Println("ALERT: Certificate and key on disk are not valid keyapri")
+		} else {
+			metrics.KeypairMismatchCount.WithLabelValues(specPath).Set(0)
 		}
 	}
 	return nil
 }
 
 // Load reads the certificate specs from the spec directory.
-func (m *Manager) Load() error {
-	if m.Certs != nil || len(m.Certs) > 0 {
+func (m *Manager) Load(forced bool) error {
+	if (m.Certs != nil || len(m.Certs) > 0) && !forced {
 		log.Debugf("manager: certificates already loaded")
 		return nil
+	}
+
+	if forced {
+		m.Certs = nil
 	}
 
 	dummyMgr, _ := svcmgr.New("dummy", "", "")
@@ -317,7 +302,7 @@ func (m *Manager) Load() error {
 			return err
 		}
 		m.Certs = append(m.Certs, &CertServiceManager{cert, manager})
-		metrics.WatchCount.Inc()
+		metrics.WatchCount.WithLabelValues(cert.Path, s, cert.Action, cert.CertificateAge().String(), cert.CA.Label, cert.CAAge().String()).Inc()
 		return nil
 	}
 
@@ -361,7 +346,7 @@ func (m *Manager) Queue(spec *CertServiceManager) {
 	}
 	spec.Queue()
 	m.renew <- spec
-	metrics.QueueCount.Inc()
+	metrics.QueueCount.WithLabelValues(spec.Spec.Path).Inc()
 }
 
 // CheckCerts verifies that certificates and keys are present, and
@@ -412,11 +397,13 @@ func (m *Manager) CheckCertsSync() int {
 		if err := m.CheckCA(m.Certs[i]); err != nil {
 			log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", m.Certs[i])
 		}
+		specPath := m.Certs[i].Spec.Path
+		metrics.FailureCount.WithLabelValues(specPath).Set(0)
 
 		if !m.Certs[i].Ready() && !m.Certs[i].IsQueued() {
 			err := m.Certs[i].RefreshKeys()
 			if err != nil {
-				metrics.FailureCount.Inc()
+				metrics.FailureCount.WithLabelValues(specPath).Inc()
 				log.Warningf("manager: failed to refresh keys (err=%s); queueing", err)
 				m.Queue(m.Certs[i])
 				failed++
@@ -427,7 +414,7 @@ func (m *Manager) CheckCertsSync() int {
 		if m.Certs[i].Lifespan() <= 0 {
 			err := m.Certs[i].RefreshKeys()
 			if err != nil {
-				metrics.FailureCount.Inc()
+				metrics.FailureCount.WithLabelValues(specPath).Inc()
 				log.Warningf("manager: failed to refresh keys (err=%s); queueing", err)
 				m.Queue(m.Certs[i])
 				failed++
@@ -527,7 +514,7 @@ func (m *Manager) MustCheckCerts(tolerance int, enableActions bool, forceRegen b
 // SetExpiresNext sets the next expiration metric.
 func (m *Manager) SetExpiresNext() {
 	var expires time.Time
-
+	var nextCert int
 	log.Debugf("manager: checking expiration on %d certificates", len(m.Certs))
 	for i := range m.Certs {
 		cert := m.Certs[i].Certificate()
@@ -539,16 +526,17 @@ func (m *Manager) SetExpiresNext() {
 		log.Debugf("manager: %s expires at %s", m.Certs[i], cert.NotAfter)
 		if expires.After(cert.NotAfter) || expires.IsZero() {
 			expires = cert.NotAfter
+			nextCert = i
 		}
 	}
 
 	if expires.IsZero() {
 		log.Debug("manager: all certificates are set to renew")
-		metrics.ExpireNext.Set(0)
+		metrics.ExpireNext.WithLabelValues(m.Certs[nextCert].Spec.Path).Set(0)
 	} else {
 		next := expires.Sub(time.Now())
 		log.Debugf("manager: next certificate expires in %0.0f hours", next.Hours())
-		metrics.ExpireNext.Set(next.Hours())
+		metrics.ExpireNext.WithLabelValues(m.Certs[nextCert].Spec.Path).Set(next.Hours())
 	}
 }
 
@@ -571,7 +559,7 @@ func (m *Manager) renewCert(cert *CertServiceManager) error {
 			}
 			backoff := cert.Backoff()
 			log.Warningf("manager: failed to renew certificate (err=%s), backing off for %0.0f seconds", err, backoff.Seconds())
-			metrics.FailureCount.Inc()
+			metrics.FailureCount.WithLabelValues(cert.Spec.Path).Inc()
 			time.Sleep(backoff)
 			continue
 		}
@@ -595,7 +583,7 @@ func (m *Manager) refreshKeys(cert *CertServiceManager) {
 		return
 	}
 
-	metrics.QueueCount.Dec()
+	metrics.QueueCount.WithLabelValues(cert.Spec.Path).Dec()
 	log.Debug("taking action due to key refresh")
 	err = cert.TakeAction("key")
 
@@ -632,6 +620,8 @@ func (m *Manager) Server(sync bool) {
 	// NB: this loop could be more intelligent; for example,
 	// updating the next expiration independently of checking
 	// certificates.
+
+	metrics.ManagerInterval.WithLabelValues(m.Dir, m.Interval).Set(1)
 	go m.ProcessQueue()
 
 	if sync {
@@ -639,13 +629,24 @@ func (m *Manager) Server(sync bool) {
 		if failed != 0 {
 			log.Infof("manager: failed to provision %d certs (certs are queued)")
 		}
+		m.CheckDiskPKI()
 	} else {
 		m.CheckCerts()
+		m.CheckDiskPKI()
 	}
 
 	for {
 		<-time.After(m.interval)
+
+		for i := range m.Certs {
+			spec := m.Certs[i].Spec
+			if spec.IsChangedOnDisk(spec.Key.Path) || spec.IsChangedOnDisk(spec.Cert.Path) {
+				m.Load(true)
+			}
+		}
+
 		m.CheckCerts()
+		m.CheckDiskPKI()
 		m.SetExpiresNext()
 	}
 }

@@ -434,34 +434,34 @@ func (spec *Spec) Lifespan() time.Duration {
 	}
 
 	// This bit of code is necessary to confirm that the cert/key are older than the spec definition.
+	if spec.IsChangedOnDisk(spec.Key.Path) || spec.IsChangedOnDisk(spec.Cert.Path) {
+		// This is necessary to essentially force cfssl to regenerate since it's not spec aware.
+		log.Infof("refreshing due to spec %s having a newer mtime than key or cert", spec.Path)
+		spec.ResetLifespan()
+		return 0
+	}
+	return spec.tr.Lifespan()
+}
+
+func (spec *Spec) IsChangedOnDisk(path string) bool {
 	specStat, err := os.Stat(spec.Path)
 	if err != nil {
 		// The assertion here is that the spec actually
 		// exists. If it doesn't, something is wrong with the
 		// world.
-		panic("cert: certificate spec doesn't exist during RefreshKeys()")
+		panic("cert: isChangedOnDisk error")
 	}
-
-	isTooOld := func(path string) bool {
-		st, err := os.Stat(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				log.Errorf("while checking cert/key path %s, got path error %s", path, err)
-			}
-			return true
+	st, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Errorf("cert isChangedOnDisk: while checking path %s, got path error %s", path, err)
 		}
-		if specStat.ModTime().After(st.ModTime()) {
-			log.Infof("refreshing due to spec %s having a newer mtime then %s", spec.Path, path)
-			return true
-		}
-		return false
+		return true
 	}
-	if isTooOld(spec.Key.Path) || isTooOld(spec.Cert.Path) {
-		// This is necessary to essentially force cfssl to regenerate since it's not spec aware.
-		spec.ResetLifespan()
-		return 0
+	if specStat.ModTime().After(st.ModTime()) {
+		return true
 	}
-	return spec.tr.Lifespan()
+	return false
 }
 
 // Reset the lifespan to force cfssl to regenerate
@@ -477,6 +477,34 @@ func (spec *Spec) Certificate() *x509.Certificate {
 	}
 
 	return spec.tr.Provider.Certificate()
+}
+
+// CertificateAge returns age of certificate associated with spec
+func (spec *Spec) CertificateAge() time.Duration {
+	c := spec.Certificate()
+	if c == nil {
+		return -1
+	}
+	now := time.Now()
+	return now.Sub(c.NotBefore)
+}
+
+// CA age returns age of CA associated with Spec
+func (spec *Spec) CAAge() time.Duration {
+	c := spec.CA.GetPEM()
+	if c == nil {
+		return -1
+	}
+	certPem, _ := pem.Decode(c)
+	if certPem == nil {
+		return -1
+	}
+	parsedCert, err := x509.ParseCertificate(certPem.Bytes)
+	if err != nil {
+		return -1
+	}
+	now := time.Now()
+	return now.Sub(parsedCert.NotBefore)
 }
 
 // Queue marks the spec as being queued for renewal.

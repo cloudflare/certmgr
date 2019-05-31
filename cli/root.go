@@ -41,7 +41,7 @@ func root(cmd *cobra.Command, args []string) {
 		log.Fatalf("certmgr: %s", err)
 	}
 
-	err = mgr.Load()
+	err = mgr.Load(false)
 	if err != nil {
 		log.Fatalf("certmgr: %s", err)
 	}
