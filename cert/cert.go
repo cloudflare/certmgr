@@ -172,7 +172,7 @@ func CompareCertificates(cert1, cert2 []byte) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return (parsedCert1.Equal(parsedCert2)), nil
+	return parsedCert1.Equal(parsedCert2), nil
 }
 
 func displayName(name pkix.Name) string {
