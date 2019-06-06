@@ -22,7 +22,7 @@ var (
 	WatchCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "cert_watching",
-			Help: "Number of certs being watched",
+			Help: "Number of certificates being watched",
 		},
 		[]string{"spec_path", "svcmgr", "cert_action", "cert_age", "ca", "ca_age"},
 	)
