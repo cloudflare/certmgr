@@ -449,7 +449,7 @@ func (spec *Spec) IsChangedOnDisk(path string) bool {
 		// The assertion here is that the spec actually
 		// exists. If it doesn't, something is wrong with the
 		// world.
-		panic("cert: isChangedOnDisk error")
+		panic("cert: isChangedOnDisk: failed to stat certificate spec")
 	}
 	st, err := os.Stat(path)
 	if err != nil {
