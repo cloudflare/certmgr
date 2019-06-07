@@ -10,7 +10,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"reflect"
+	"sort"
 	"time"
 
 	"github.com/cloudflare/certmgr/cert"
@@ -160,7 +160,7 @@ var validExtensions = map[string]bool{
 
 // CheckDiskPKI checks the PKI information on disk against cert spec and alerts upon differences
 // Specifically, it checks that private key on disk matches spec algorithm & keysize,
-// and certificate  on disk matches CSR spec info
+// and certificate on disk matches CSR spec info
 func (m *Manager) CheckDiskPKI() error {
 
 	if m.Certs == nil || len(m.Certs) == 0 {
@@ -209,14 +209,14 @@ func (m *Manager) CheckDiskPKI() error {
 
 		if algDisk != algSpec {
 			metrics.AlgorithmMismatchCount.WithLabelValues(specPath).Set(1)
-			fmt.Printf("ALERT: disk alg is %s but spec alg is %s\n", algDisk, algSpec)
+			log.Errorf("manager: disk alg is %s but spec alg is %s\n", algDisk, algSpec)
 		} else {
 			metrics.AlgorithmMismatchCount.WithLabelValues(specPath).Set(0)
 		}
 
 		if sizeDisk != sizeSpec {
 			metrics.KeysizeMismatchCount.WithLabelValues(specPath).Set(1)
-			fmt.Printf("ALERT: disk key size is %d but spec key size is %d\n", sizeDisk, sizeSpec)
+			log.Errorf("manager: disk key size is %d but spec key size is %d\n", sizeDisk, sizeSpec)
 		} else {
 			metrics.KeysizeMismatchCount.WithLabelValues(specPath).Set(0)
 		}
@@ -234,9 +234,9 @@ func (m *Manager) CheckDiskPKI() error {
 		if err != nil {
 			return err
 		}
-		if !reflect.DeepEqual(csrRequest.Hosts, cert.DNSNames) {
+		if !hostnamesEquals(csrRequest.Hosts, cert.DNSNames) {
 			metrics.HostnameMismatchCount.WithLabelValues(specPath).Set(1)
-			fmt.Println("ALERT: DNS names in cert on disk don't match with hostnames in spec")
+			log.Errorf("manager: DNS names in cert on disk don't match with hostnames in spec")
 		} else {
 			metrics.HostnameMismatchCount.WithLabelValues(specPath).Set(0)
 		}
@@ -245,12 +245,27 @@ func (m *Manager) CheckDiskPKI() error {
 		tlsCert, err := tls.X509KeyPair(certData, keyData)
 		if err != nil || tlsCert.Leaf != nil {
 			metrics.KeypairMismatchCount.WithLabelValues(specPath).Set(1)
-			fmt.Println("ALERT: Certificate and key on disk are not valid keyapri")
+			log.Errorf("manager: Certificate and key on disk are not valid keypair")
 		} else {
 			metrics.KeypairMismatchCount.WithLabelValues(specPath).Set(0)
 		}
 	}
 	return nil
+}
+
+// Compare if hostnames in certificate and spec are equal
+func hostnamesEquals(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	sort.Strings(a)
+	sort.Strings(b)
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Load reads the certificate specs from the spec directory.
@@ -513,6 +528,10 @@ func (m *Manager) MustCheckCerts(tolerance int, enableActions bool, forceRegen b
 
 // SetExpiresNext sets the next expiration metric.
 func (m *Manager) SetExpiresNext() {
+	if m.Certs == nil || len(m.Certs) <= 0 {
+		return
+	}
+
 	var expires time.Time
 	var nextCert int
 	log.Debugf("manager: checking expiration on %d certificates", len(m.Certs))
@@ -629,10 +648,13 @@ func (m *Manager) Server(sync bool) {
 		if failed != 0 {
 			log.Infof("manager: failed to provision %d certs (certs are queued)")
 		}
-		m.CheckDiskPKI()
 	} else {
 		m.CheckCerts()
-		m.CheckDiskPKI()
+	}
+
+	err := m.CheckDiskPKI()
+	if err != nil {
+		log.Debugf("manager: checkdiskpki: %s", err.Error())
 	}
 
 	for {
@@ -646,7 +668,10 @@ func (m *Manager) Server(sync bool) {
 		}
 
 		m.CheckCerts()
-		m.CheckDiskPKI()
+		err := m.CheckDiskPKI()
+		if err != nil {
+			log.Debugf("manager: checkdiskpki: %s", err.Error())
+		}
 		m.SetExpiresNext()
 	}
 }

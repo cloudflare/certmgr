@@ -132,7 +132,7 @@ func (ca *CA) Refresh() (bool, error) {
 
 	isCACertSame, err := CompareCertificates(cert, ca.pem)
 	if err != nil {
-		log.Infof("cert: error comparing CA certificates")
+		log.Warning("cert: error comparing CA certificates")
 		return false, err
 	}
 
@@ -449,7 +449,8 @@ func (spec *Spec) IsChangedOnDisk(path string) bool {
 		// The assertion here is that the spec actually
 		// exists. If it doesn't, something is wrong with the
 		// world.
-		panic("cert: isChangedOnDisk: failed to stat certificate spec")
+		log.Warning("cert: IsChangedOnDisk: Spec file does not exist")
+		return true
 	}
 	st, err := os.Stat(path)
 	if err != nil {
@@ -458,10 +459,7 @@ func (spec *Spec) IsChangedOnDisk(path string) bool {
 		}
 		return true
 	}
-	if specStat.ModTime().After(st.ModTime()) {
-		return true
-	}
-	return false
+	return specStat.ModTime().After(st.ModTime())
 }
 
 // Reset the lifespan to force cfssl to regenerate
@@ -483,6 +481,7 @@ func (spec *Spec) Certificate() *x509.Certificate {
 func (spec *Spec) CertificateAge() time.Duration {
 	c := spec.Certificate()
 	if c == nil {
+		log.Debug("cert: CertificateAge: No certificate associated with spec")
 		return -1
 	}
 	now := time.Now()
@@ -491,16 +490,19 @@ func (spec *Spec) CertificateAge() time.Duration {
 
 // CA age returns age of CA associated with Spec
 func (spec *Spec) CAAge() time.Duration {
-	c := spec.CA.GetPEM()
+	c := spec.CA.pem
 	if c == nil {
+		log.Debug("cert: CAAge: No certificate associated with spec")
 		return -1
 	}
 	certPem, _ := pem.Decode(c)
 	if certPem == nil {
+		log.Debug("cert: CAAge: Unable to pem decode certificate")
 		return -1
 	}
 	parsedCert, err := x509.ParseCertificate(certPem.Bytes)
 	if err != nil {
+		log.Debug("cert: CAAge: Unable to parse certificate")
 		return -1
 	}
 	now := time.Now()
