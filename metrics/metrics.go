@@ -110,6 +110,15 @@ var (
 		},
 		[]string{"spec_path", "change_type"},
 	)
+
+	// ActionFailure counts number of times an action taken by spec failed
+	ActionFailure = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "action_failure",
+			Help: "Number of times a spec's action has failed",
+		},
+		[]string{"spec_path", "change_type"},
+	)
 )
 
 func init() {
@@ -125,6 +134,7 @@ func init() {
 	prometheus.MustRegister(KeypairMismatchCount)
 	prometheus.MustRegister(ManagerInterval)
 	prometheus.MustRegister(ActionCount)
+	prometheus.MustRegister(ActionFailure)
 }
 
 var indexPage = `<html>

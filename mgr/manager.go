@@ -340,12 +340,14 @@ func (m *Manager) Load(forced bool) error {
 // if needed.
 func (m *Manager) CheckCA(spec *CertServiceManager) error {
 	if changed, err := spec.CA.Refresh(); err != nil {
+		metrics.ActionFailure.WithLabelValues(spec.Spec.Path, "CA").Inc()
 		return err
 	} else if changed {
 		log.Debug("taking action due to CA refresh")
 		err := spec.TakeAction("CA")
 
 		if err != nil {
+			metrics.ActionFailure.WithLabelValues(spec.Spec.Path, "CA").Inc()
 			log.Errorf("manager: %s", err)
 		}
 		return err
@@ -512,6 +514,7 @@ func (m *Manager) MustCheckCerts(tolerance int, enableActions bool, forceRegen b
 			// associated with the certificate, the certificate has been
 			// renewed.
 			if err != nil {
+				metrics.ActionFailure.WithLabelValues(cert.cert.Spec.Path, "key").Inc()
 				log.Errorf("manager: %s", err)
 			}
 		}
@@ -610,6 +613,7 @@ func (m *Manager) refreshKeys(cert *CertServiceManager) {
 	// associated with the certificate, the certificate has been
 	// renewed.
 	if err != nil {
+		metrics.ActionFailure.WithLabelValues(cert.Spec.Path, "key").Inc()
 		log.Errorf("manager: %s", err)
 	}
 
@@ -663,7 +667,11 @@ func (m *Manager) Server(sync bool) {
 		for i := range m.Certs {
 			spec := m.Certs[i].Spec
 			if spec.IsChangedOnDisk(spec.Key.Path) || spec.IsChangedOnDisk(spec.Cert.Path) {
-				m.Load(true)
+				err := m.Load(true)
+				if err != nil {
+					metrics.ActionFailure.WithLabelValues(spec.Path, "load").Inc()
+					log.Debugf("manager: load: %s", err.Error())
+				}
 			}
 		}
 
