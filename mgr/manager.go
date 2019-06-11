@@ -327,7 +327,7 @@ func (m *Manager) Load(forced bool) error {
 	}
 
 	if len(m.Certs) == 0 {
-		return errors.New("manager: no certificate specs found")
+		log.Warning("manager: no certificate specs found")
 	}
 
 	log.Infof("manager: watching %d certificates", len(m.Certs))
@@ -650,7 +650,7 @@ func (m *Manager) Server(sync bool) {
 	if sync {
 		failed := m.CheckCertsSync()
 		if failed != 0 {
-			log.Infof("manager: failed to provision %d certs (certs are queued)")
+			log.Errorf("manager: failed to provision %d certs (certs are queued)")
 		}
 	} else {
 		m.CheckCerts()
