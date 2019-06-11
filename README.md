@@ -248,3 +248,11 @@ functions specified:
 ## See also
 
 The `certmgr` spec is included as `SPEC.rst`.
+
+
+## Contributing
+
+To contribute to this repo, here are some guidelines.
+
+### Unit Testing
+Unit tests can be written locally. To run them in a non-Linux environment, have Docker up and run `make test`. This will spin up a container with your local build. From here you can `go test` your files.

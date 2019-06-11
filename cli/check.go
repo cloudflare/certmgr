@@ -25,7 +25,7 @@ func Check(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	err = mgr.Load()
+	err = mgr.Load(false)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		os.Exit(1)
