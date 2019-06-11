@@ -400,50 +400,6 @@ func (m *Manager) CheckCerts() {
 	m.SetExpiresNext()
 }
 
-// CheckCertsSync acts like CheckCerts, except that it doesn't queue
-// the certificates: it makes an initial synchronous attempt at
-// ensuring that each certificate exists. If an error occurs, the
-// certificate is added to the renewal queue. This is useful, for
-// example, on program startup. It returns the number of certificates
-// that were unable to be generated.
-func (m *Manager) CheckCertsSync() int {
-	var failed int
-
-	log.Info("manager: checking certificates (sync)")
-	for i := range m.Certs {
-		if err := m.CheckCA(m.Certs[i]); err != nil {
-			log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", m.Certs[i])
-		}
-		specPath := m.Certs[i].Spec.Path
-		metrics.FailureCount.WithLabelValues(specPath).Set(0)
-
-		if !m.Certs[i].Ready() && !m.Certs[i].IsQueued() {
-			err := m.Certs[i].RefreshKeys()
-			if err != nil {
-				metrics.FailureCount.WithLabelValues(specPath).Inc()
-				log.Warningf("manager: failed to refresh keys (err=%s); queueing", err)
-				m.Queue(m.Certs[i])
-				failed++
-				continue
-			}
-		}
-
-		if m.Certs[i].Lifespan() <= 0 {
-			err := m.Certs[i].RefreshKeys()
-			if err != nil {
-				metrics.FailureCount.WithLabelValues(specPath).Inc()
-				log.Warningf("manager: failed to refresh keys (err=%s); queueing", err)
-				m.Queue(m.Certs[i])
-				failed++
-				continue
-			}
-		}
-	}
-
-	m.SetExpiresNext()
-	return failed
-}
-
 // MustCheckCerts acts like CheckCerts, except it's synchronous and
 // has a maxmimum number of failures that are tolerated. If tolerate
 // is less than 1, it will be set to 1.
@@ -637,9 +593,8 @@ func (m *Manager) ProcessQueue() {
 	}
 }
 
-// Server runs the Manager server. If sync is true, the first pass
-// will be synchronous. It will autostart the renewal queue.
-func (m *Manager) Server(sync bool) {
+// Server runs the Manager server.
+func (m *Manager) Server() {
 	// NB: this loop could be more intelligent; for example,
 	// updating the next expiration independently of checking
 	// certificates.
@@ -647,14 +602,7 @@ func (m *Manager) Server(sync bool) {
 	metrics.ManagerInterval.WithLabelValues(m.Dir, m.Interval).Set(1)
 	go m.ProcessQueue()
 
-	if sync {
-		failed := m.CheckCertsSync()
-		if failed != 0 {
-			log.Errorf("manager: failed to provision %d certs (certs are queued)")
-		}
-	} else {
-		m.CheckCerts()
-	}
+	m.CheckCerts()
 
 	err := m.CheckDiskPKI()
 	if err != nil {
