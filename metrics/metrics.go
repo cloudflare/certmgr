@@ -20,12 +20,12 @@ const metricsNamespace = "certmgr"
 var (
 	startTime time.Time
 
-	// WatchCount counts the number of certificates being watched.
-	WatchCount = prometheus.NewGaugeVec(
-		prometheus.CounterOpts{
+	// SpecWatchCount counts the number of specs being watched.
+	SpecWatchCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
 			Namespace: metricsNamespace,
-			Name:      "cert_watching",
-			Help:      "Number of certificates being watched",
+			Name:      "specs_watched_total",
+			Help:      "Number of specs being watched",
 		},
 		[]string{"spec_path", "svcmgr", "cert_action", "cert_age", "ca", "ca_age"},
 	)

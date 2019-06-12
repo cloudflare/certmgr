@@ -409,7 +409,7 @@ func (m *Manager) Load(forced bool) error {
 			return err
 		}
 		m.Certs = append(m.Certs, &CertServiceManager{cert, manager})
-		metrics.WatchCount.WithLabelValues(cert.Path, s, cert.Action, cert.CertificateAge().String(), cert.CA.Label, cert.CAAge().String()).Inc()
+		metrics.SpecWatchCount.WithLabelValues(cert.Path, s, cert.Action, cert.CertificateAge().String(), cert.CA.Label, cert.CAAge().String()).Inc()
 		return nil
 	}
 
