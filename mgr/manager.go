@@ -138,14 +138,14 @@ func (csm *CertServiceManager) CheckDiskPKI() error {
 
 	if algDisk != algSpec {
 		metrics.AlgorithmMismatchCount.WithLabelValues(specPath).Set(1)
-		log.Errorf("manager: disk alg is %s but spec alg is %s\n", algDisk, algSpec)
+		return fmt.Errorf("manager: disk alg is %s but spec alg is %s\n", algDisk, algSpec)
 	} else {
 		metrics.AlgorithmMismatchCount.WithLabelValues(specPath).Set(0)
 	}
 
 	if sizeDisk != sizeSpec {
 		metrics.KeysizeMismatchCount.WithLabelValues(specPath).Set(1)
-		log.Errorf("manager: disk key size is %d but spec key size is %d\n", sizeDisk, sizeSpec)
+		return fmt.Errorf("manager: disk key size is %d but spec key size is %d\n", sizeDisk, sizeSpec)
 	} else {
 		metrics.KeysizeMismatchCount.WithLabelValues(specPath).Set(0)
 	}
@@ -165,7 +165,7 @@ func (csm *CertServiceManager) CheckDiskPKI() error {
 	}
 	if !hostnamesEquals(csrRequest.Hosts, cert.DNSNames) {
 		metrics.HostnameMismatchCount.WithLabelValues(specPath).Set(1)
-		log.Errorf("manager: DNS names in cert on disk don't match with hostnames in spec")
+		return errors.New("manager: DNS names in cert on disk don't match with hostnames in spec")
 	} else {
 		metrics.HostnameMismatchCount.WithLabelValues(specPath).Set(0)
 	}
@@ -174,7 +174,7 @@ func (csm *CertServiceManager) CheckDiskPKI() error {
 	tlsCert, err := tls.X509KeyPair(certData, keyData)
 	if err != nil || tlsCert.Leaf != nil {
 		metrics.KeypairMismatchCount.WithLabelValues(specPath).Set(1)
-		log.Errorf("manager: Certificate and key on disk are not valid keypair")
+		return fmt.Errorf("manager: Certificate and key on disk are not valid keypair: %s", err)
 	} else {
 		metrics.KeypairMismatchCount.WithLabelValues(specPath).Set(0)
 	}
@@ -401,7 +401,8 @@ func (m *Manager) CheckCerts() {
 	for i := range m.Certs {
 		err := m.Certs[i].CheckDiskPKI()
 		if err != nil {
-			log.Debugf("manager: spec %s, checkdiskpki: %s", m.Certs[i], err.Error())
+			log.Debugf("manager: spec %s, checkdiskpki: %s.  Forcing refresh.", m.Certs[i], err.Error())
+			m.Certs[i].ResetLifespan()
 		}
 
 		if err = m.Certs[i].CheckCA(); err != nil {
@@ -449,7 +450,8 @@ func (m *Manager) MustCheckCerts(tolerance int, enableActions bool, forceRegen b
 	for i := range m.Certs {
 		err := m.Certs[i].CheckDiskPKI()
 		if err != nil {
-			log.Debugf("manager: spec %s, checkdiskpki: %s", m.Certs[i], err.Error())
+			log.Debugf("manager: spec %s, checkdiskpki: %s.  Forcing refresh", m.Certs[i], err.Error())
+			m.Certs[i].ResetLifespan()
 		}
 
 		if err = m.Certs[i].CheckCA(); err != nil {
