@@ -149,17 +149,6 @@ var indexPage = `<html>
       <li>Prometheus endpoint: <a href="/metrics"><code>/metrics</code></a></li>
       <li>pprof endpoint: <a href="/debug/pprof"><code>/debug/pprof</code></a></li>
     </ul>
-    <h4>Current metrics:</h4>
-    <ul>
-      <li>Watch count: %d</li>
-      <li>Certs in queue: %d</li>
-      <li>Hours until the next cert expires: %d</li>
-      <li>Number of times a certificate has failed to renew: %d</li>
-    </ul>
-    <h4>Certificates managed by this instance:</h4>
-    <ul>
-%s
-    </ul>
   </body>
 </html>
 `
@@ -167,7 +156,7 @@ var indexPage = `<html>
 func genServeIndex(addr, ilink string, certs string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		page := fmt.Sprintf(indexPage, startTime.Format("2006-01-02T15:04:05-0700"),
-			addr, ilink, certs)
+			addr, ilink)
 		io.WriteString(w, page)
 	}
 }
