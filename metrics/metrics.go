@@ -15,14 +15,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+const metricsNamespace = "certmgr"
+
 var (
 	startTime time.Time
 
 	// WatchCount counts the number of certificates being watched.
-	WatchCount = prometheus.NewCounterVec(
+	WatchCount = prometheus.NewGaugeVec(
 		prometheus.CounterOpts{
-			Name: "cert_watching",
-			Help: "Number of certificates being watched",
+			Namespace: metricsNamespace,
+			Name:      "cert_watching",
+			Help:      "Number of certificates being watched",
 		},
 		[]string{"spec_path", "svcmgr", "cert_action", "cert_age", "ca", "ca_age"},
 	)
@@ -31,8 +34,9 @@ var (
 	// expiry.
 	ExpireNext = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "cert_next_expires",
-			Help: "the number of hours until the next certificate expires",
+			Namespace: metricsNamespace,
+			Name:      "cert_next_expires",
+			Help:      "the number of hours until the next certificate expires",
 		},
 		[]string{"spec_path"},
 	)
@@ -41,8 +45,9 @@ var (
 	// generate a key pair or renew a certificate.
 	FailureCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "cert_renewal_failures",
-			Help: "Number of keypair generation or cert renewal failures",
+			Namespace: metricsNamespace,
+			Name:      "cert_renewal_failures",
+			Help:      "Number of keypair generation or cert renewal failures",
 		},
 		[]string{"spec_path"},
 	)
@@ -50,8 +55,9 @@ var (
 	// AlgorithmMismatchCount counts mismatches occurred between algorithm on disk vs algorithm in spec
 	AlgorithmMismatchCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "algorithm_mismatch",
-			Help: "Number of mismatches between cert algorithm on disk vs algorithm specified in spec",
+			Namespace: metricsNamespace,
+			Name:      "algorithm_mismatch",
+			Help:      "Number of mismatches between cert algorithm on disk vs algorithm specified in spec",
 		},
 		[]string{"spec_path"},
 	)
@@ -59,8 +65,9 @@ var (
 	// KeysizeMismatchCount counts mismatches occurred between keysize on disk vs keysize in spec
 	KeysizeMismatchCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "keysize_mismatch",
-			Help: "Number of mismatches between keysize disk vs keysize specified in spec",
+			Namespace: metricsNamespace,
+			Name:      "keysize_mismatch",
+			Help:      "Number of mismatches between keysize disk vs keysize specified in spec",
 		},
 		[]string{"spec_path"},
 	)
@@ -68,8 +75,9 @@ var (
 	// HostnameMismatchCount counts mismatches occurred between cert hostnames on disk vs cert hostnames in spec
 	HostnameMismatchCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "hostname_mismatch",
-			Help: "Number of mismatches between cert hostnames on disk vs cert hostnames specified in spec",
+			Namespace: metricsNamespace,
+			Name:      "hostname_mismatch",
+			Help:      "Number of mismatches between cert hostnames on disk vs cert hostnames specified in spec",
 		},
 		[]string{"spec_path"},
 	)
@@ -77,8 +85,9 @@ var (
 	// KeypairMismatchCount counts TLS mismatch between key and certificate on disk
 	KeypairMismatchCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "keypair_mismatch",
-			Help: "Number of TLS mismatches between key and certificate on disk",
+			Namespace: metricsNamespace,
+			Name:      "keypair_mismatch",
+			Help:      "Number of TLS mismatches between key and certificate on disk",
 		},
 		[]string{"spec_path"},
 	)
@@ -86,8 +95,9 @@ var (
 	// ManagerInterval is set to the interval at which a cert manager wakes up and does its checks
 	ManagerInterval = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "manager_interval",
-			Help: "the time interval that manager wakes up and does checks",
+			Namespace: metricsNamespace,
+			Name:      "manager_interval",
+			Help:      "the time interval that manager wakes up and does checks",
 		},
 		[]string{"directory", "interval"},
 	)
@@ -95,8 +105,9 @@ var (
 	// ActionCount counts actions taken by spec
 	ActionCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "action_count",
-			Help: "Number of times a spec has taken action",
+			Namespace: metricsNamespace,
+			Name:      "action_count",
+			Help:      "Number of times a spec has taken action",
 		},
 		[]string{"spec_path", "change_type"},
 	)
@@ -104,8 +115,9 @@ var (
 	// ActionFailure counts number of times an action taken by spec failed
 	ActionFailure = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "action_failure",
-			Help: "Number of times a spec's action has failed",
+			Namespace: metricsNamespace,
+			Name:      "action_failure",
+			Help:      "Number of times a spec's action has failed",
 		},
 		[]string{"spec_path", "change_type"},
 	)
