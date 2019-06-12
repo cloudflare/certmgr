@@ -31,6 +31,60 @@ type CertServiceManager struct {
 	serviceManager svcmgr.Manager
 }
 
+func (csm *CertServiceManager) String() string {
+	return fmt.Sprintf("spec: %s", csm.Spec.Path)
+}
+
+// Process a spec updating content on disk, taking action as needed.
+// Returns (TTL for PKI, error).  If an error occurs, the ttl is at best
+// a hint to the invoker as to when the next refresh is required- that said
+// the invoker should back off and try a refresh.
+func (csm *CertServiceManager) EnforcePKI(enable_actions bool) (time.Duration, error) {
+	err := csm.CheckDiskPKI()
+	if err != nil {
+		log.Debugf("manager: %s, checkdiskpki: %s.  Forcing refresh.", csm, err.Error())
+		csm.ResetLifespan()
+	}
+
+	if err = csm.CheckCA(); err != nil {
+		log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", csm)
+	}
+
+	lifespan := time.Duration(0)
+	if !csm.Ready() {
+		log.Debugf("manager: %s isn't ready", csm)
+	} else {
+		log.Debugf("manager: %s checking lifespan", csm)
+		lifespan = csm.Lifespan()
+	}
+	log.Debugf("manager: %s has lifespan %s", csm, lifespan)
+	if lifespan <= 0 {
+		err := csm.RenewPKI()
+		if err != nil {
+			log.Errorf("manager: failed to renew %s; requeuing cert", csm)
+			return 0, err
+		}
+
+		log.Debug("taking action due to key refresh")
+		if enable_actions {
+			err = csm.TakeAction("key")
+		} else {
+			log.Infof("skipping actions for %s due to calling mode", csm)
+		}
+
+		// Even though there was an error managing the service
+		// associated with the certificate, the certificate has been
+		// renewed.
+		if err != nil {
+			metrics.ActionFailure.WithLabelValues(csm.Spec.Path, "key").Inc()
+			log.Errorf("manager: %s", err)
+		}
+
+		log.Info("manager: certificate successfully processed")
+	}
+	return csm.Lifespan(), nil
+}
+
 func (csm *CertServiceManager) TakeAction(change_type string) error {
 	log.Infof("manager: executing configured action due to change type %s for %s", change_type, csm.Cert.Path)
 	ca_path := ""
@@ -43,14 +97,13 @@ func (csm *CertServiceManager) TakeAction(change_type string) error {
 	return csm.serviceManager.TakeAction(change_type, csm.Path, ca_path, cert_path, key_path)
 }
 
-// The maximum number of attempts before putting the cert back on the
-// queue.
+// The maximum number of attempts before giving up.
 const maxAttempts = 5
 
 func (cert *CertServiceManager) RenewPKI() error {
 	start := time.Now()
 	for attempts := 0; attempts < maxAttempts; attempts++ {
-		log.Infof("manager: processing certificate spec %s (attempt %d)", cert, attempts+1)
+		log.Infof("manager: processing certificate %s (attempt %d)", cert, attempts+1)
 		err := cert.RefreshKeys()
 		if err != nil {
 			if isAuthError(err) {
@@ -58,7 +111,7 @@ func (cert *CertServiceManager) RenewPKI() error {
 				// only valid option here; it will
 				// force an investigation into why the
 				// auth key is bad.
-				log.Fatalf("invalid auth key in certificate spec %s", cert.Path)
+				log.Fatalf("invalid auth key for %s", cert)
 			}
 			backoff := cert.Backoff()
 			log.Warningf("manager: failed to renew certificate (err=%s), backing off for %0.0f seconds", err, backoff.Seconds())
@@ -207,10 +260,6 @@ type Manager struct {
 
 	// Certs contains the list of certificates to manage.
 	Certs []*CertServiceManager `json:",omitempty" yaml:",omitempty"`
-
-	// renew is the queue used to manage certificates that need to
-	// be renewed.
-	renew chan *CertServiceManager
 }
 
 // NewFromConfig loads a new Manager from a config file. This does not load the
@@ -374,151 +423,23 @@ func (m *Manager) Load(forced bool) error {
 	}
 
 	log.Infof("manager: watching %d certificates", len(m.Certs))
-
-	m.renew = make(chan *CertServiceManager, len(m.Certs))
 	return nil
 }
 
-// Queue adds the spec to the renewal queue if it isn't already
-// queued.
-func (m *Manager) Queue(spec *CertServiceManager) {
-	if spec.IsQueued() {
-		return
-	}
-	spec.Queue()
-	m.renew <- spec
-	metrics.QueueCount.WithLabelValues(spec.Spec.Path).Inc()
-}
-
 // CheckCerts verifies that certificates and keys are present, and
-// queues any certificates that need to be renewed. It returns
-// time.Duration indicating how long until the next certificate check
-// should occur.
+// refreshes anything needed, while updating the bookkeeping for when
+// next to wake up.
 func (m *Manager) CheckCerts() {
-	var next time.Duration
-
 	log.Info("manager: checking certificates")
-	for i := range m.Certs {
-		err := m.Certs[i].CheckDiskPKI()
+	for _, cert := range m.Certs {
+		log.Debugf("manager: checking %s", cert)
+		_, err := cert.EnforcePKI(true)
 		if err != nil {
-			log.Debugf("manager: spec %s, checkdiskpki: %s.  Forcing refresh.", m.Certs[i], err.Error())
-			m.Certs[i].ResetLifespan()
-		}
-
-		if err = m.Certs[i].CheckCA(); err != nil {
-			log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", m.Certs[i])
-		}
-
-		if !m.Certs[i].Ready() {
-			log.Infof("manager: queueing %s because it isn't ready", m.Certs[i])
-			m.Queue(m.Certs[i])
-			continue
-		}
-
-		lifespan := m.Certs[i].Lifespan()
-		if lifespan <= 0 {
-			log.Info("manager: queueing certificate with lifespan of ", lifespan.Hours(), " hours")
-			m.Queue(m.Certs[i])
-			continue
-		}
-
-		if next == 0 || next > lifespan {
-			next = lifespan
+			log.Errorf("Failed processing %s due to %s", cert, err)
 		}
 	}
 
 	m.SetExpiresNext()
-}
-
-// MustCheckCerts acts like CheckCerts, except it's synchronous and
-// has a maxmimum number of failures that are tolerated. If tolerate
-// is less than 1, it will be set to 1.
-func (m *Manager) MustCheckCerts(tolerance int, enableActions bool, forceRegen bool) error {
-	if tolerance < 1 {
-		tolerance = 1
-	}
-
-	log.Infof("manager: ensuring all certificates exist and are ready (maximum %d tries)", tolerance)
-
-	type queuedCert struct {
-		cert     *CertServiceManager
-		errcount int
-		err      error
-	}
-
-	var queue = make(chan *queuedCert, len(m.Certs))
-	for i := range m.Certs {
-		err := m.Certs[i].CheckDiskPKI()
-		if err != nil {
-			log.Debugf("manager: spec %s, checkdiskpki: %s.  Forcing refresh", m.Certs[i], err.Error())
-			m.Certs[i].ResetLifespan()
-		}
-
-		if err = m.Certs[i].CheckCA(); err != nil {
-			log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", m.Certs[i])
-		}
-
-		if forceRegen {
-			log.Debugf("manager: forcing regeneration of spec %s", m.Certs[i])
-			m.Certs[i].ResetLifespan()
-			queue <- &queuedCert{cert: m.Certs[i]}
-			continue
-		}
-		if !m.Certs[i].Ready() && !m.Certs[i].IsQueued() {
-			queue <- &queuedCert{cert: m.Certs[i]}
-			continue
-		}
-
-		if m.Certs[i].Lifespan() <= 0 {
-			queue <- &queuedCert{cert: m.Certs[i]}
-			continue
-		}
-	}
-
-	if len(queue) == 0 {
-		log.Infof("manager: all certificates are up-to-date.")
-		close(queue)
-	}
-
-	for cert := range queue {
-		log.Infof("manager: processing certificate spec %s on attempt %d",
-			cert.cert.Path, cert.errcount+1)
-		if cert.errcount >= tolerance {
-			if cert.err != nil {
-				return cert.err
-			}
-			return fmt.Errorf("manager: failed to ensure certificate is present (spec=%s); no reason was given.", cert.cert.Path)
-		}
-
-		cert.err = cert.cert.RefreshKeys()
-		if cert.err != nil {
-			log.Errorf("manager: failed to process spec: %s; queueing for retry", cert.cert.Path)
-			cert.errcount++
-			queue <- cert
-			continue
-		}
-		log.Infof("manager: certificate spec %s successfully processed", cert.cert.Path)
-		if enableActions {
-			log.Debug("taking action due to key refresh")
-			err := cert.cert.TakeAction("key")
-
-			// Even though there was an error managing the service
-			// associated with the certificate, the certificate has been
-			// renewed.
-			if err != nil {
-				metrics.ActionFailure.WithLabelValues(cert.cert.Spec.Path, "key").Inc()
-				log.Errorf("manager: %s", err)
-			}
-		}
-
-		if len(queue) == 0 {
-			log.Infof("manager: certificate queue is clear")
-			close(queue)
-			break
-		}
-	}
-
-	return nil
 }
 
 // SetExpiresNext sets the next expiration metric.
@@ -554,48 +475,6 @@ func (m *Manager) SetExpiresNext() {
 	}
 }
 
-// refreshKeys attempts to renew the certificate, perform any service
-// management functions required, and update the metrics as needed.
-func (m *Manager) refreshKeys(cert *CertServiceManager) {
-	err := cert.RenewPKI()
-	if err != nil {
-		m.renew <- cert
-		log.Errorf("manager: failed to renew %s; requeuing cert", cert)
-		return
-	}
-
-	metrics.QueueCount.WithLabelValues(cert.Spec.Path).Dec()
-	log.Debug("taking action due to key refresh")
-	err = cert.TakeAction("key")
-
-	// Even though there was an error managing the service
-	// associated with the certificate, the certificate has been
-	// renewed.
-	if err != nil {
-		metrics.ActionFailure.WithLabelValues(cert.Spec.Path, "key").Inc()
-		log.Errorf("manager: %s", err)
-	}
-
-	cert.Dequeue()
-	log.Info("manager: certificate successfully processed")
-
-	m.SetExpiresNext()
-}
-
-// ProcessQueue retrieves certificates from the renewal queue and
-// attempts to renew them. It is intended to be run as a goroutine.
-func (m *Manager) ProcessQueue() {
-	log.Info("manager: queue processor is ready")
-	for {
-		cert, ok := <-m.renew
-		if !ok {
-			return
-		}
-
-		go m.refreshKeys(cert)
-	}
-}
-
 // Server runs the Manager server.
 func (m *Manager) Server() {
 	// NB: this loop could be more intelligent; for example,
@@ -603,7 +482,6 @@ func (m *Manager) Server() {
 	// certificates.
 
 	metrics.ManagerInterval.WithLabelValues(m.Dir, m.Interval).Set(1)
-	go m.ProcessQueue()
 
 	m.CheckCerts()
 

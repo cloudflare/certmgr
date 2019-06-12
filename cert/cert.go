@@ -246,7 +246,6 @@ type Spec struct {
 	// spec.
 	Path string
 
-	queued  bool
 	expires time.Time
 	tr      *transport.Transport
 }
@@ -464,7 +463,10 @@ func (spec *Spec) IsChangedOnDisk(path string) bool {
 
 // Reset the lifespan to force cfssl to regenerate
 func (spec *Spec) ResetLifespan() {
-	spec.tr.Provider.Certificate().NotAfter = time.Time{}
+	cert := spec.tr.Provider.Certificate()
+	if cert != nil {
+		spec.tr.Provider.Certificate().NotAfter = time.Time{}
+	}
 }
 
 // Certificate returns the x509.Certificate associated with the spec
@@ -507,22 +509,6 @@ func (spec *Spec) CAAge() time.Duration {
 	}
 	now := time.Now()
 	return now.Sub(parsedCert.NotBefore)
-}
-
-// Queue marks the spec as being queued for renewal.
-func (spec *Spec) Queue() {
-	spec.queued = true
-}
-
-// IsQueued returns true if the spec is already queued for renewal.
-func (spec *Spec) IsQueued() bool {
-	return spec.queued
-}
-
-// Dequeue marks the spec as having been removed from the renewal
-// queue.
-func (spec *Spec) Dequeue() {
-	spec.queued = false
 }
 
 // Backoff returns the backoff delay.

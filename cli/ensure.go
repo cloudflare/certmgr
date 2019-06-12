@@ -38,13 +38,30 @@ func Ensure(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	err = mgr.MustCheckCerts(ensureTolerance, enableActions, forceRegen)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
-		os.Exit(1)
+	if ensureTolerance < 1 {
+		ensureTolerance = 1
 	}
-
-	fmt.Println("OK")
+	failedSpecs := 0
+	for _, cert := range mgr.Certs {
+		for attempt := ensureTolerance; attempt > 0; attempt-- {
+			if forceRegen {
+				cert.ResetLifespan()
+			}
+			_, err = cert.EnforcePKI(enableActions)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed processing spec %s due to %s; %d remaining attempts", cert.Spec.Path, err, attempt)
+			} else {
+				break
+			}
+		}
+		if err != nil {
+			failedSpecs++
+		}
+	}
+	if failedSpecs == 0 {
+		fmt.Println("Ok")
+	}
+	os.Exit(failedSpecs)
 }
 
 func init() {

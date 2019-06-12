@@ -27,16 +27,6 @@ var (
 		[]string{"spec_path", "svcmgr", "cert_action", "cert_age", "ca", "ca_age"},
 	)
 
-	// QueueCount counts the number of certificates actively in
-	// the renewal queue.
-	QueueCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "cert_renewal_queue",
-			Help: "number of certificates in the renewal queue",
-		},
-		[]string{"spec_path"},
-	)
-
 	// ExpireNext contains the time of the next certificate
 	// expiry.
 	ExpireNext = prometheus.NewGaugeVec(
@@ -125,7 +115,6 @@ func init() {
 	startTime = time.Now()
 
 	prometheus.MustRegister(WatchCount)
-	prometheus.MustRegister(QueueCount)
 	prometheus.MustRegister(ExpireNext)
 	prometheus.MustRegister(FailureCount)
 	prometheus.MustRegister(AlgorithmMismatchCount)
