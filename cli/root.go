@@ -17,7 +17,7 @@ import (
 
 var cfgFile string
 var logLevel string
-var debug, sync bool
+var debug bool
 var requireSpecs bool
 
 var manager struct {
@@ -63,7 +63,7 @@ func root(cmd *cobra.Command, args []string) {
 		viper.GetString("index_extra_html"),
 		certs,
 	)
-	mgr.Server(sync)
+	mgr.Server()
 }
 
 var RootCmd = &cobra.Command{
@@ -93,8 +93,6 @@ func init() {
 	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", fmt.Sprintf("service manager, must be one of: %s", strings.Join(backends, ", ")))
 	RootCmd.PersistentFlags().StringVarP(&manager.Before, "before", "t", "", "how long before certificates expire to start renewing (in the form Nh)")
 	RootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug mode")
-	RootCmd.Flags().BoolVarP(&sync, "sync", "s", false, "the first certificate check should be synchronous")
-	RootCmd.Flags().MarkHidden("sync")
 	RootCmd.Flags().BoolVarP(&requireSpecs, "requireSpecs", "", false, "fail the daemon startup if no specs were found in the directory to watch")
 
 	viper.BindPFlag("dir", RootCmd.PersistentFlags().Lookup("dir"))
