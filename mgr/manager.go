@@ -43,6 +43,58 @@ func (csm *CertServiceManager) TakeAction(change_type string) error {
 	return csm.serviceManager.TakeAction(change_type, csm.Path, ca_path, cert_path, key_path)
 }
 
+// The maximum number of attempts before putting the cert back on the
+// queue.
+const maxAttempts = 5
+
+func (cert *CertServiceManager) RenewPKI() error {
+	start := time.Now()
+	for attempts := 0; attempts < maxAttempts; attempts++ {
+		log.Infof("manager: processing certificate spec %s (attempt %d)", cert, attempts+1)
+		err := cert.RefreshKeys()
+		if err != nil {
+			if isAuthError(err) {
+				// Killing the server is really the
+				// only valid option here; it will
+				// force an investigation into why the
+				// auth key is bad.
+				log.Fatalf("invalid auth key in certificate spec %s", cert.Path)
+			}
+			backoff := cert.Backoff()
+			log.Warningf("manager: failed to renew certificate (err=%s), backing off for %0.0f seconds", err, backoff.Seconds())
+			metrics.FailureCount.WithLabelValues(cert.Spec.Path).Inc()
+			time.Sleep(backoff)
+			continue
+		}
+
+		cert.ResetBackoff()
+		return nil
+	}
+	stop := time.Now()
+
+	cert.ResetBackoff()
+	return fmt.Errorf("manager: failed to renew %s in %d attempts (in %0.0f seconds)", cert, maxAttempts, stop.Sub(start).Seconds())
+}
+
+// CheckCA checks the CA on the certificate and restarts the service
+// if needed.
+func (spec *CertServiceManager) CheckCA() error {
+	if changed, err := spec.CA.Refresh(); err != nil {
+		metrics.ActionFailure.WithLabelValues(spec.Spec.Path, "CA").Inc()
+		return err
+	} else if changed {
+		log.Debug("taking action due to CA refresh")
+		err := spec.TakeAction("CA")
+
+		if err != nil {
+			metrics.ActionFailure.WithLabelValues(spec.Spec.Path, "CA").Inc()
+			log.Errorf("manager: %s", err)
+		}
+		return err
+	}
+	return nil
+}
+
 // The Manager structure contains the certificates to be managed. A
 // manager needs to be constructed with one of the New functions, and
 // should not be constructed by hand.
@@ -336,25 +388,6 @@ func (m *Manager) Load(forced bool) error {
 	return nil
 }
 
-// CheckCA checks the CA on the certificate and restarts the service
-// if needed.
-func (m *Manager) CheckCA(spec *CertServiceManager) error {
-	if changed, err := spec.CA.Refresh(); err != nil {
-		metrics.ActionFailure.WithLabelValues(spec.Spec.Path, "CA").Inc()
-		return err
-	} else if changed {
-		log.Debug("taking action due to CA refresh")
-		err := spec.TakeAction("CA")
-
-		if err != nil {
-			metrics.ActionFailure.WithLabelValues(spec.Spec.Path, "CA").Inc()
-			log.Errorf("manager: %s", err)
-		}
-		return err
-	}
-	return nil
-}
-
 // Queue adds the spec to the renewal queue if it isn't already
 // queued.
 func (m *Manager) Queue(spec *CertServiceManager) {
@@ -375,7 +408,7 @@ func (m *Manager) CheckCerts() {
 
 	log.Info("manager: checking certificates")
 	for i := range m.Certs {
-		if err := m.CheckCA(m.Certs[i]); err != nil {
+		if err := m.Certs[i].CheckCA(); err != nil {
 			log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", m.Certs[i])
 		}
 
@@ -418,7 +451,7 @@ func (m *Manager) MustCheckCerts(tolerance int, enableActions bool, forceRegen b
 
 	var queue = make(chan *queuedCert, len(m.Certs))
 	for i := range m.Certs {
-		if err := m.CheckCA(m.Certs[i]); err != nil {
+		if err := m.Certs[i].CheckCA(); err != nil {
 			log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", m.Certs[i])
 		}
 
@@ -518,43 +551,10 @@ func (m *Manager) SetExpiresNext() {
 	}
 }
 
-// The maximum number of attempts before putting the cert back on the
-// queue.
-const maxAttempts = 5
-
-func (m *Manager) renewCert(cert *CertServiceManager) error {
-	start := time.Now()
-	for attempts := 0; attempts < maxAttempts; attempts++ {
-		log.Infof("manager: processing certificate spec %s (attempt %d)", cert, attempts+1)
-		err := cert.RefreshKeys()
-		if err != nil {
-			if isAuthError(err) {
-				// Killing the server is really the
-				// only valid option here; it will
-				// force an investigation into why the
-				// auth key is bad.
-				log.Fatalf("invalid auth key in certificate spec %s", cert.Path)
-			}
-			backoff := cert.Backoff()
-			log.Warningf("manager: failed to renew certificate (err=%s), backing off for %0.0f seconds", err, backoff.Seconds())
-			metrics.FailureCount.WithLabelValues(cert.Spec.Path).Inc()
-			time.Sleep(backoff)
-			continue
-		}
-
-		cert.ResetBackoff()
-		return nil
-	}
-	stop := time.Now()
-
-	cert.ResetBackoff()
-	return fmt.Errorf("manager: failed to renew %s in %d attempts (in %0.0f seconds)", cert, maxAttempts, stop.Sub(start).Seconds())
-}
-
 // refreshKeys attempts to renew the certificate, perform any service
 // management functions required, and update the metrics as needed.
 func (m *Manager) refreshKeys(cert *CertServiceManager) {
-	err := m.renewCert(cert)
+	err := cert.RenewPKI()
 	if err != nil {
 		m.renew <- cert
 		log.Errorf("manager: failed to renew %s; requeuing cert", cert)
