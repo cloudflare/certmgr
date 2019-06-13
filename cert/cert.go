@@ -331,7 +331,7 @@ func (spec *Spec) Identity() (*core.Identity, error) {
 	return ident, nil
 }
 
-func readCertFile(path string) (*Spec, error) {
+func newSpecFromPath(path string) (*Spec, error) {
 	in, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -356,7 +356,7 @@ func readCertFile(path string) (*Spec, error) {
 
 // Load reads a spec from a JSON configuration file.
 func Load(path, remote string, before time.Duration) (*Spec, error) {
-	spec, err := readCertFile(path)
+	spec, err := newSpecFromPath(path)
 	if err != nil {
 		return nil, err
 	}
