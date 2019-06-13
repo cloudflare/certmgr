@@ -452,7 +452,7 @@ func (m *Manager) Server() {
 	// updating the next expiration independently of checking
 	// certificates.
 
-	metrics.ManagerInterval.WithLabelValues(m.Dir, m.Interval).Set(1)
+	metrics.ManagerInterval.WithLabelValues(m.Dir).Set(m.interval.Seconds())
 
 	m.CheckCerts()
 

@@ -96,10 +96,10 @@ var (
 	ManagerInterval = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricsNamespace,
-			Name:      "manager_interval",
+			Name:      "manager_interval_seconds",
 			Help:      "the time interval that manager wakes up and does checks",
 		},
-		[]string{"directory", "interval"},
+		[]string{"directory"},
 	)
 
 	// ActionCount counts actions taken by spec
