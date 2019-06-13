@@ -139,7 +139,7 @@ func newSpecFromPath(path string) (*Spec, error) {
 	case ".json":
 		err = json.Unmarshal(in, &spec)
 	case ".yml", ".yaml":
-		err = yaml.Unmarshal(in, &spec)
+		err = yaml.UnmarshalStrict(in, &spec)
 	default:
 		err = fmt.Errorf("cert: unrecognised spec file format for %s", path)
 	}

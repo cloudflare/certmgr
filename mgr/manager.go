@@ -293,7 +293,7 @@ func NewFromConfig(configPath string) (*Manager, error) {
 		return nil, err
 	}
 	var m = &Manager{}
-	err = yaml.Unmarshal(in, &m)
+	err = yaml.UnmarshalStrict(in, &m)
 	if err != nil {
 		err = m.validate()
 	}
