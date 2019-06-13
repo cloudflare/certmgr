@@ -17,7 +17,7 @@ import (
 
 var cfgFile string
 var logLevel string
-var debug bool
+var debug, strict bool
 var requireSpecs bool
 
 var manager struct {
@@ -41,8 +41,11 @@ func root(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatalf("certmgr: %s", err)
 	}
-
-	err = mgr.Load(false)
+	strict, err := cmd.Flags().GetBool("strict")
+	if err != nil {
+		strict = false
+	}
+	err = mgr.Load(false, strict)
 	if err != nil {
 		log.Fatalf("certmgr: %s", err)
 	}
@@ -63,7 +66,7 @@ func root(cmd *cobra.Command, args []string) {
 		viper.GetString("index_extra_html"),
 		certs,
 	)
-	mgr.Server()
+	mgr.Server(strict)
 }
 
 var RootCmd = &cobra.Command{
@@ -93,6 +96,7 @@ func init() {
 	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", fmt.Sprintf("service manager, must be one of: %s", strings.Join(backends, ", ")))
 	RootCmd.PersistentFlags().StringVarP(&manager.Before, "before", "t", "", "how long before certificates expire to start renewing (in the form Nh)")
 	RootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug mode")
+	RootCmd.PersistentFlags().BoolVar(&strict, "strict", false, "refuse to load certificate without valid renewal action defined")
 	RootCmd.Flags().BoolVarP(&requireSpecs, "requireSpecs", "", false, "fail the daemon startup if no specs were found in the directory to watch")
 
 	viper.BindPFlag("dir", RootCmd.PersistentFlags().Lookup("dir"))
