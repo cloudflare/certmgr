@@ -452,8 +452,7 @@ func (m *Manager) Server(strict bool) {
 	for {
 		<-time.After(m.Interval)
 
-		for i := range m.Certs {
-			spec := m.Certs[i].Spec
+		for _, spec := range m.Certs {
 			if spec.IsChangedOnDisk(spec.Key.Path) || spec.IsChangedOnDisk(spec.Cert.Path) {
 				err := m.Load(true, strict)
 				if err != nil {

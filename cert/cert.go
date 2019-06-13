@@ -201,24 +201,24 @@ func displayName(name pkix.Name) string {
 		ns = append(ns, name.CommonName)
 	}
 
-	for i := range name.Country {
-		ns = append(ns, fmt.Sprintf("C=%s", name.Country[i]))
+	for _, val := range name.Country {
+		ns = append(ns, fmt.Sprintf("C=%s", val))
 	}
 
-	for i := range name.Organization {
-		ns = append(ns, fmt.Sprintf("O=%s", name.Organization[i]))
+	for _, val := range name.Organization {
+		ns = append(ns, fmt.Sprintf("O=%s", val))
 	}
 
-	for i := range name.OrganizationalUnit {
-		ns = append(ns, fmt.Sprintf("OU=%s", name.OrganizationalUnit[i]))
+	for _, val := range name.OrganizationalUnit {
+		ns = append(ns, fmt.Sprintf("OU=%s", val))
 	}
 
-	for i := range name.Locality {
-		ns = append(ns, fmt.Sprintf("L=%s", name.Locality[i]))
+	for _, val := range name.Locality {
+		ns = append(ns, fmt.Sprintf("L=%s", val))
 	}
 
-	for i := range name.Province {
-		ns = append(ns, fmt.Sprintf("ST=%s", name.Province[i]))
+	for _, val := range name.Province {
+		ns = append(ns, fmt.Sprintf("ST=%s", val))
 	}
 
 	if len(ns) > 0 {
