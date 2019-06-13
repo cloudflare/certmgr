@@ -3,7 +3,6 @@ package mgr
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -20,9 +19,13 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
-// DefaultInterval is used if no interval is provided for a
+// DefaultInterval is used if no duration is provided for a
 // Manager. This defaults to one hour.
 const DefaultInterval = time.Hour
+
+// DefaultBefore is used if no duration is provided for a
+// Manager. This defaults to 72 hours.
+const DefaultBefore = time.Hour * 72
 
 // This exists purely so we can bind custom svcmgr's per cert; this is primarily
 // used for 'command' svcmgr's that don't follow the norm.
@@ -82,6 +85,8 @@ func (csm *CertServiceManager) EnforcePKI(enable_actions bool) (time.Duration, e
 
 		log.Info("manager: certificate successfully processed")
 	}
+	metrics.Expires.WithLabelValues(csm.Spec.Path, "cert").Set(float64(csm.CertExpireTime().Unix()))
+
 	return csm.Lifespan(), nil
 }
 
@@ -132,10 +137,13 @@ func (cert *CertServiceManager) RenewPKI() error {
 // CheckCA checks the CA on the certificate and restarts the service
 // if needed.
 func (spec *CertServiceManager) CheckCA() error {
-	if changed, err := spec.CA.Refresh(); err != nil {
+	var err error
+	var changed bool
+	if changed, err = spec.CA.Refresh(); err != nil {
 		metrics.ActionFailure.WithLabelValues(spec.Spec.Path, "CA").Inc()
 		return err
 	} else if changed {
+		metrics.Expires.WithLabelValues(spec.Spec.Path, "ca").Set(float64(spec.CAExpireTime().Unix()))
 		log.Debug("taking action due to CA refresh")
 		err := spec.TakeAction("CA")
 
@@ -143,9 +151,9 @@ func (spec *CertServiceManager) CheckCA() error {
 			metrics.ActionFailure.WithLabelValues(spec.Spec.Path, "CA").Inc()
 			log.Errorf("manager: %s", err)
 		}
-		return err
 	}
-	return nil
+	metrics.Expires.WithLabelValues(spec.Spec.Path, "ca").Set(float64(spec.CAExpireTime().Unix()))
+	return err
 }
 
 // CheckDiskPKI checks the PKI information on disk against cert spec and alerts upon differences
@@ -239,27 +247,39 @@ func (csm *CertServiceManager) CheckDiskPKI() error {
 // should not be constructed by hand.
 type Manager struct {
 	// Dir is the directory containing the certificate specs.
-	Dir string `json:"certspecs" yaml:"certspecs"`
+	Dir string `yaml:"certspecs"`
 
 	// DefaultRemote is used as the remote CA server when no
 	// remote is specified.
-	DefaultRemote string `json:"default_remote" yaml:"default_remote"`
+	DefaultRemote string `yaml:"default_remote"`
 
 	// ServiceManager is the service manager used to restart a
 	// service.
-	ServiceManager string `json:"service_manager" yaml:"service_manager"`
+	ServiceManager string `yaml:"service_manager"`
 
 	// Before is how long before the cert expires to start
 	// attempting to renew it.
-	Before string `json:"before" yaml:"before"`
-	before time.Duration
+	Before time.Duration `yaml:"before"`
 
 	// Interval is how often to update the NextExpires metric.
-	Interval string `json:"interval" yaml:"interval"`
-	interval time.Duration
+	Interval time.Duration `yaml:"interval"`
 
 	// Certs contains the list of certificates to manage.
-	Certs []*CertServiceManager `json:",omitempty" yaml:",omitempty"`
+	Certs []*CertServiceManager `yaml:",omitempty"`
+}
+
+func (m *Manager) UnmarshallYAML(unmarshall func(interface{}) error) error {
+	m = &Manager{
+		Before:   DefaultBefore,
+		Interval: DefaultInterval,
+	}
+	// use a cast to prevent unmarshall from going recursive against this
+	// deserializer function.
+	type plain Manager
+	if err := unmarshall((*plain)(m)); err != nil {
+		return err
+	}
+	return nil
 }
 
 // NewFromConfig loads a new Manager from a config file. This does not load the
@@ -272,35 +292,17 @@ func NewFromConfig(configPath string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	var m = &Manager{}
-	if in[0] == '{' {
-		err = json.Unmarshal(in, &m)
-	} else {
-		err = yaml.Unmarshal(in, &m)
-	}
+	err = yaml.Unmarshal(in, &m)
 	if err != nil {
-		return nil, err
+		err = m.validate()
 	}
-
-	return setup(m)
+	return m, err
 }
 
 // New constructs a new Manager from parameters. It is intended to be
 // used in conjunction with command line flags.
-func New(dir, remote, svcmgr, before, interval string) (*Manager, error) {
-	if dir == "" {
-		return nil, fmt.Errorf("manager: invalid manager configuration (missing spec dir)")
-	}
-
-	if svcmgr == "" {
-		return nil, fmt.Errorf("manager: invalid manager configuration (missing service manager)")
-	}
-
-	if before == "" {
-		return nil, fmt.Errorf("manager: invalid manager configuration (missing before)")
-	}
-
+func New(dir string, remote string, svcmgr string, before time.Duration, interval time.Duration) (*Manager, error) {
 	m := &Manager{
 		Dir:            dir,
 		DefaultRemote:  remote,
@@ -309,34 +311,22 @@ func New(dir, remote, svcmgr, before, interval string) (*Manager, error) {
 		Interval:       interval,
 	}
 
-	return setup(m)
+	return m, m.validate()
 }
 
 // setup provides the common final setup work that needs to be done
 // for a Manager to be ready.
-func setup(m *Manager) (*Manager, error) {
-	var err error
-
+func (m *Manager) validate() error {
+	if m.Dir == "" {
+		return fmt.Errorf("manager: invalid manager configuration (missing spec dir)")
+	}
 	m.Dir = filepath.Clean(m.Dir)
 
 	if m.ServiceManager == "" {
 		m.ServiceManager = "dummy"
 	}
 
-	m.before, err = time.ParseDuration(m.Before)
-	if err != nil {
-		return nil, err
-	}
-
-	if m.Interval == "" {
-		m.interval = DefaultInterval
-	} else {
-		m.interval, err = time.ParseDuration(m.Interval)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return m, nil
+	return nil
 }
 
 var validExtensions = map[string]bool{
@@ -392,7 +382,7 @@ func (m *Manager) Load(forced bool) error {
 		}
 
 		log.Info("manager: loading spec from ", path)
-		cert, err := cert.Load(path, m.DefaultRemote, m.before)
+		cert, err := cert.Load(path, m.DefaultRemote, m.Before)
 		if err != nil {
 			return err
 		}
@@ -409,7 +399,7 @@ func (m *Manager) Load(forced bool) error {
 			return err
 		}
 		m.Certs = append(m.Certs, &CertServiceManager{cert, manager})
-		metrics.WatchCount.WithLabelValues(cert.Path, s, cert.Action, cert.CertificateAge().String(), cert.CA.Label, cert.CAAge().String()).Inc()
+		metrics.SpecWatchCount.WithLabelValues(cert.Path, s, cert.Action, cert.CA.Label).Inc()
 		return nil
 	}
 
@@ -438,41 +428,7 @@ func (m *Manager) CheckCerts() {
 			log.Errorf("Failed processing %s due to %s", cert, err)
 		}
 	}
-
-	m.SetExpiresNext()
-}
-
-// SetExpiresNext sets the next expiration metric.
-func (m *Manager) SetExpiresNext() {
-	if m.Certs == nil || len(m.Certs) <= 0 {
-		return
-	}
-
-	var expires time.Time
-	var nextCert int
-	log.Debugf("manager: checking expiration on %d certificates", len(m.Certs))
-	for i := range m.Certs {
-		cert := m.Certs[i].Certificate()
-		if cert == nil {
-			log.Debugf("manager: spec has unloaded certificate (%s)", m.Certs[i])
-			continue
-		}
-
-		log.Debugf("manager: %s expires at %s", m.Certs[i], cert.NotAfter)
-		if expires.After(cert.NotAfter) || expires.IsZero() {
-			expires = cert.NotAfter
-			nextCert = i
-		}
-	}
-
-	if expires.IsZero() {
-		log.Debug("manager: all certificates are set to renew")
-		metrics.ExpireNext.WithLabelValues(m.Certs[nextCert].Spec.Path).Set(0)
-	} else {
-		next := expires.Sub(time.Now())
-		log.Debugf("manager: next certificate expires in %0.0f hours", next.Hours())
-		metrics.ExpireNext.WithLabelValues(m.Certs[nextCert].Spec.Path).Set(next.Hours())
-	}
+	log.Info("manager: finished checking certificates")
 }
 
 // Server runs the Manager server.
@@ -481,12 +437,12 @@ func (m *Manager) Server() {
 	// updating the next expiration independently of checking
 	// certificates.
 
-	metrics.ManagerInterval.WithLabelValues(m.Dir, m.Interval).Set(1)
+	metrics.ManagerInterval.WithLabelValues(m.Dir).Set(m.Interval.Seconds())
 
 	m.CheckCerts()
 
 	for {
-		<-time.After(m.interval)
+		<-time.After(m.Interval)
 
 		for i := range m.Certs {
 			spec := m.Certs[i].Spec
@@ -500,6 +456,5 @@ func (m *Manager) Server() {
 		}
 
 		m.CheckCerts()
-		m.SetExpiresNext()
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/cloudflare/certmgr/cert"
 	"github.com/cloudflare/certmgr/metrics"
@@ -23,7 +24,8 @@ var requireSpecs bool
 var manager struct {
 	Dir            string
 	ServiceManager string
-	Before         string
+	Before         time.Duration
+	Interval       time.Duration
 }
 
 func newManager() (*mgr.Manager, error) {
@@ -31,8 +33,8 @@ func newManager() (*mgr.Manager, error) {
 		viper.GetString("dir"),
 		viper.GetString("default_remote"),
 		viper.GetString("svcmgr"),
-		viper.GetString("before"),
-		viper.GetString("interval"),
+		viper.GetDuration("before"),
+		viper.GetDuration("interval"),
 	)
 }
 
@@ -91,13 +93,15 @@ func init() {
 	}
 	sort.Strings(backends)
 	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", fmt.Sprintf("service manager, must be one of: %s", strings.Join(backends, ", ")))
-	RootCmd.PersistentFlags().StringVarP(&manager.Before, "before", "t", "", "how long before certificates expire to start renewing (in the form Nh)")
+	RootCmd.PersistentFlags().DurationVarP(&manager.Before, "before", "t", mgr.DefaultBefore, "how long before certificates expire to start renewing (in duration format)")
+	RootCmd.PersistentFlags().DurationVarP(&manager.Interval, "interval", "i", mgr.DefaultInterval, "how long to sleep before checking for renewal (in duration format)")
 	RootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug mode")
 	RootCmd.Flags().BoolVarP(&requireSpecs, "requireSpecs", "", false, "fail the daemon startup if no specs were found in the directory to watch")
 
 	viper.BindPFlag("dir", RootCmd.PersistentFlags().Lookup("dir"))
 	viper.BindPFlag("svcmgr", RootCmd.PersistentFlags().Lookup("svcmgr"))
 	viper.BindPFlag("before", RootCmd.PersistentFlags().Lookup("before"))
+	viper.BindPFlag("interval", RootCmd.PersistentFlags().Lookup("interval"))
 	viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 }
 
