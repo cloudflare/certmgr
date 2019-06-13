@@ -3,10 +3,7 @@
 package cert
 
 import (
-	"bytes"
-	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -19,214 +16,11 @@ import (
 
 	"gopkg.in/yaml.v1"
 
-	"github.com/cloudflare/cfssl/api/client"
 	"github.com/cloudflare/cfssl/csr"
-	"github.com/cloudflare/cfssl/info"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/cfssl/transport"
 	"github.com/cloudflare/cfssl/transport/core"
 )
-
-// A CA contains the core details for a CFSSL CA. There are two ways
-// to use this: fill out Name to refer to a global CA (e.g. as defined
-// in the config file) or fill out Remote, Label, Profile, and AuthKey.
-type CA struct {
-	Name        string `json:"name" yaml:"name"`
-	Remote      string `json:"remote" yaml:"remote"`
-	Label       string `json:"label" yaml:"label"`
-	Profile     string `json:"profile" yaml:"profile"`
-	AuthKey     string `json:"auth_key" yaml:"auth_key"`
-	AuthKeyFile string `json:"auth_key_file" yaml:"auth_key_file"`
-	File        *File  `json:"file,omitempty" yaml:"file,omitempty"`
-	RootCACert  string `json:"root_ca,omitempty" yaml:"root_ca,omitempty"`
-	pem         []byte
-}
-
-// GetPEM is for testing only!
-// Getter for CA cert PEM
-func (ca *CA) GetPEM() []byte {
-	return ca.pem
-}
-
-// SetPEM is for testing only!
-// Setter for CA cert PEM
-func (ca *CA) SetPEM(pem []byte) {
-	ca.pem = pem
-}
-
-func (ca *CA) getRemoteCert() ([]byte, error) {
-	var tlsConfig *tls.Config
-	if ca.RootCACert != "" {
-		rootCABytes, err := ioutil.ReadFile(ca.RootCACert)
-		if err != nil {
-			return nil, err
-		}
-
-		rootCaCertPool := x509.NewCertPool()
-		ok := rootCaCertPool.AppendCertsFromPEM(rootCABytes)
-		if !ok {
-			return nil, errors.New("failed to parse rootCA certs")
-		}
-		tlsConfig = &tls.Config{
-			RootCAs: rootCaCertPool,
-		}
-	}
-
-	remote := client.NewServerTLS(ca.Remote, tlsConfig)
-	infoReq := &info.Req{
-		Label:   ca.Label,
-		Profile: ca.Profile,
-	}
-
-	serialisedRequest, err := json.Marshal(infoReq)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := remote.Info(serialisedRequest)
-	if err != nil {
-		return nil, err
-	}
-
-	return []byte(strings.TrimSpace(resp.Certificate)), nil
-}
-
-func (ca *CA) writeCert(cert []byte) error {
-	if ca.File == nil {
-		return nil
-	}
-
-	ca.File.Path = filepath.Clean(ca.File.Path)
-	err := ca.File.Parse(fmt.Sprintf("CA:%s/%s/%s", ca.Remote, ca.Label, ca.Profile))
-	if err != nil {
-		return err
-	}
-
-	// add a trailing newline for humans
-	if !bytes.HasSuffix(cert, []byte{'\n'}) {
-		cert = append(cert, '\n')
-	}
-	err = ioutil.WriteFile(ca.File.Path, cert, 0644)
-	if err != nil {
-		return err
-	}
-	log.Infof("cert: wrote CA certificate: %s", ca.File.Path)
-
-	err = ca.File.Set()
-	return err
-}
-
-// Load reads the CA certificate from the configured remote, and if a
-// File section is present in the config, it will attempt to write the
-// CA certificate to disk.
-func (ca *CA) Load() error {
-	cert, err := ca.getRemoteCert()
-	if err != nil {
-		log.Errorf("cert: failed to fetch remote CA: %s", err)
-		return err
-	}
-
-	if ca.File == nil {
-		// NB: this used to be an info message, but it caused
-		// more confusion than anything else.
-		ca.pem = cert
-		log.Debug("cert: no CA file provided, won't write the CA file to disk")
-		return nil
-	}
-
-	ca.pem, err = ioutil.ReadFile(ca.File.Path)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
-
-// Refresh fetches the latest CA cert. If it has changed, write the
-// new CA cert and return true.
-func (ca *CA) Refresh() (bool, error) {
-	cert, err := ca.getRemoteCert()
-	if err != nil {
-		return false, err
-	}
-
-	isCACertSame, err := CompareCertificates(cert, ca.pem)
-	if err != nil {
-		log.Warning("cert: error comparing CA certificates")
-		return false, err
-	}
-
-	if isCACertSame {
-		if ca.File != nil {
-			log.Infof("cert: existing CA certificate at %s is current", ca.File.Path)
-		}
-		return false, nil
-	}
-
-	// If CA cert has changed, write out new CA cert
-	if ca.File != nil {
-		err = ca.writeCert(cert)
-	}
-	// If there were no errors, update our internal notion of what the CA is.
-	if err != nil {
-		ca.pem = cert
-	}
-	return true, err
-}
-
-// CompareCertificates x509 compares two CA certificates
-func CompareCertificates(cert1, cert2 []byte) (bool, error) {
-	p1, _ := pem.Decode(cert1)
-	if p1 == nil {
-		return false, errors.New("Unable to pem decode certificate")
-	}
-	parsedCert1, err := x509.ParseCertificate(p1.Bytes)
-	if err != nil {
-		return false, err
-	}
-	p2, _ := pem.Decode(cert2)
-	if p2 == nil {
-		return false, errors.New("Unable to pem decode certificate")
-	}
-	parsedCert2, err := x509.ParseCertificate(p2.Bytes)
-	if err != nil {
-		return false, err
-	}
-	return parsedCert1.Equal(parsedCert2), nil
-}
-
-func displayName(name pkix.Name) string {
-	var ns []string
-
-	if name.CommonName != "" {
-		ns = append(ns, name.CommonName)
-	}
-
-	for _, val := range name.Country {
-		ns = append(ns, fmt.Sprintf("C=%s", val))
-	}
-
-	for _, val := range name.Organization {
-		ns = append(ns, fmt.Sprintf("O=%s", val))
-	}
-
-	for _, val := range name.OrganizationalUnit {
-		ns = append(ns, fmt.Sprintf("OU=%s", val))
-	}
-
-	for _, val := range name.Locality {
-		ns = append(ns, fmt.Sprintf("L=%s", val))
-	}
-
-	for _, val := range name.Province {
-		ns = append(ns, fmt.Sprintf("ST=%s", val))
-	}
-
-	if len(ns) > 0 {
-		return "/" + strings.Join(ns, "/")
-	}
-
-	return ""
-}
 
 // A Spec contains information needed to monitor and renew a
 // certificate.
@@ -265,7 +59,7 @@ type Spec struct {
 	// spec.
 	Path string
 
-	tr      *transport.Transport
+	tr *transport.Transport
 }
 
 func (spec *Spec) String() string {
