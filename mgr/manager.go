@@ -351,7 +351,7 @@ func hostnamesEquals(a, b []string) bool {
 }
 
 // Load reads the certificate specs from the spec directory.
-func (m *Manager) Load(forced bool) error {
+func (m *Manager) Load(forced, strict bool) error {
 	if (m.Certs != nil || len(m.Certs) > 0) && !forced {
 		log.Debugf("manager: certificates already loaded")
 		return nil
@@ -394,9 +394,17 @@ func (m *Manager) Load(forced bool) error {
 		manager := dummyMgr
 		if cert.Action != "" && cert.Action != "nop" {
 			manager, err = svcmgr.New(s, cert.Action, cert.Service)
+			if err != nil {
+				return err
+			}
 		}
-		if err != nil {
-			return err
+		// If action is undefined and svcmgr isn't dummy, we will throw a warning due to likely undefined cert renewal behavior
+		// We will refuse to even store/keep track of the cert if we're in strict mode
+		if (cert.Action == "" || cert.Action == "nop") && s != "dummy" {
+			log.Warningf("manager: No action defined for a non-dummy svcmgr in certificate spec. This can lead to undefined certificate renewal behavior.")
+			if strict {
+				return nil
+			}
 		}
 		m.Certs = append(m.Certs, &CertServiceManager{cert, manager})
 		metrics.SpecWatchCount.WithLabelValues(cert.Path, s, cert.Action, cert.CA.Label).Inc()
@@ -432,7 +440,7 @@ func (m *Manager) CheckCerts() {
 }
 
 // Server runs the Manager server.
-func (m *Manager) Server() {
+func (m *Manager) Server(strict bool) {
 	// NB: this loop could be more intelligent; for example,
 	// updating the next expiration independently of checking
 	// certificates.
@@ -447,7 +455,7 @@ func (m *Manager) Server() {
 		for i := range m.Certs {
 			spec := m.Certs[i].Spec
 			if spec.IsChangedOnDisk(spec.Key.Path) || spec.IsChangedOnDisk(spec.Cert.Path) {
-				err := m.Load(true)
+				err := m.Load(true, strict)
 				if err != nil {
 					metrics.ActionFailure.WithLabelValues(spec.Path, "load").Inc()
 					log.Debugf("manager: load: %s", err.Error())

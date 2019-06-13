@@ -24,8 +24,11 @@ func Check(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		os.Exit(1)
 	}
-
-	err = mgr.Load(false)
+	strict, err := cmd.Flags().GetBool("strict")
+	if err != nil {
+		strict = false
+	}
+	err = mgr.Load(false, strict)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		os.Exit(1)
