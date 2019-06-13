@@ -10,6 +10,7 @@ import (
 var ensureTolerance = 3
 var enableActions = false
 var forceRegen = false
+var allowZeroSpecs = false
 
 var ensureCmd = &cobra.Command{
 	Use:   "ensure",
@@ -26,13 +27,24 @@ func Ensure(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	err = mgr.Load()
+	err = mgr.Load(false)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		os.Exit(1)
 	}
 
+	if !allowZeroSpecs && len(mgr.Certs) == 0 {
+		fmt.Fprint(os.Stderr, "Failed: No specs were found to process\n")
+		os.Exit(1)
+	}
+
 	err = mgr.MustCheckCerts(ensureTolerance, enableActions, forceRegen)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
+		os.Exit(1)
+	}
+
+	err = mgr.CheckDiskPKI()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		os.Exit(1)
@@ -46,4 +58,5 @@ func init() {
 	ensureCmd.Flags().IntVarP(&ensureTolerance, "tries", "n", ensureTolerance, "number of times to retry refreshing a certificate")
 	ensureCmd.Flags().BoolVarP(&enableActions, "enableActions", "", enableActions, "if passed, run the certificates svcmgr actions; defaults to not running them")
 	ensureCmd.Flags().BoolVarP(&forceRegen, "forceRegen", "", forceRegen, "if passed, ignore TTL checks and force regeneration of all specs")
+	ensureCmd.Flags().BoolVarP(&allowZeroSpecs, "allowZeroSpecs", "0", allowZeroSpecs, "if passed, do not return a nonzero exit code if there were no specs found to process; defaults to failing if nothing is found")
 }

@@ -149,7 +149,8 @@ An example certificate spec:
             "path": "/etc/myservice/ca.pem",
             "owner": "www-data",
             "group": "www-data"
-        }
+        },
+        root_ca: "/etc/cfssl/api_server_ca.pem"
     }
 }
 ```
@@ -204,6 +205,10 @@ The CA specification contains the following fields:
 * `profile`: the CA profile that should be used.
 * `file`: if this is included, the CA certificate will be saved here. It
   follows the same file specification format above.
+* `root_ca`: optionally, a path to a certificate to trust as CA for the
+  cfssl API server certificate. Usable if the "remote" is tls enabled
+  and configured with a self-signed certificate. By default,
+  the system root CA chain is trusted.
 
 ## `command svcmgr` and how to use it
 
@@ -248,3 +253,11 @@ functions specified:
 ## See also
 
 The `certmgr` spec is included as `SPEC.rst`.
+
+
+## Contributing
+
+To contribute to this repo, here are some guidelines.
+
+### Unit Testing
+Unit tests can be written locally. To run them in a non-Linux environment, have Docker up and run `make test`. This will spin up a container with your local build. From here you can `go test` your files.

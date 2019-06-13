@@ -4,9 +4,11 @@ package cert
 
 import (
 	"bytes"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -36,11 +38,41 @@ type CA struct {
 	AuthKey     string `json:"auth_key" yaml:"auth_key"`
 	AuthKeyFile string `json:"auth_key_file" yaml:"auth_key_file"`
 	File        *File  `json:"file,omitempty" yaml:"file,omitempty"`
+	RootCACert  string `json:"root_ca,omitempty" yaml:"root_ca,omitempty"`
 	pem         []byte
 }
 
+// GetPEM is for testing only!
+// Getter for CA cert PEM
+func (ca *CA) GetPEM() []byte {
+	return ca.pem
+}
+
+// SetPEM is for testing only!
+// Setter for CA cert PEM
+func (ca *CA) SetPEM(pem []byte) {
+	ca.pem = pem
+}
+
 func (ca *CA) getRemoteCert() ([]byte, error) {
-	remote := client.NewServer(ca.Remote)
+	var tlsConfig *tls.Config
+	if ca.RootCACert != "" {
+		rootCABytes, err := ioutil.ReadFile(ca.RootCACert)
+		if err != nil {
+			return nil, err
+		}
+
+		rootCaCertPool := x509.NewCertPool()
+		ok := rootCaCertPool.AppendCertsFromPEM(rootCABytes)
+		if !ok {
+			return nil, errors.New("failed to parse rootCA certs")
+		}
+		tlsConfig = &tls.Config{
+			RootCAs: rootCaCertPool,
+		}
+	}
+
+	remote := client.NewServerTLS(ca.Remote, tlsConfig)
 	infoReq := &info.Req{
 		Label:   ca.Label,
 		Profile: ca.Profile,
@@ -106,9 +138,6 @@ func (ca *CA) Load() error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	// strip prefix/suffix whitespace since what we get back from remote doesn't have that.
-	ca.pem = []byte(strings.TrimSpace(string(ca.pem[:])))
-
 	return nil
 }
 
@@ -120,23 +149,49 @@ func (ca *CA) Refresh() (bool, error) {
 		return false, err
 	}
 
-	if bytes.Equal(cert, ca.pem) {
+	isCACertSame, err := CompareCertificates(cert, ca.pem)
+	if err != nil {
+		log.Warning("cert: error comparing CA certificates")
+		return false, err
+	}
+
+	if isCACertSame {
 		if ca.File != nil {
 			log.Infof("cert: existing CA certificate at %s is current", ca.File.Path)
 		}
 		return false, nil
 	}
 
+	// If CA cert has changed, write out new CA cert
 	if ca.File != nil {
 		err = ca.writeCert(cert)
 	}
 	// If there were no errors, update our internal notion of what the CA is.
 	if err != nil {
-		// see CA.Load(); strip prefix/trailing whitespace to ensure our bytes.Equal() checks don't false positive.
-		ca.pem = []byte(strings.TrimSpace(string(cert[:])))
+		ca.pem = cert
 	}
-
 	return true, err
+}
+
+// CompareCertificates x509 compares two CA certificates
+func CompareCertificates(cert1, cert2 []byte) (bool, error) {
+	p1, _ := pem.Decode(cert1)
+	if p1 == nil {
+		return false, errors.New("Unable to pem decode certificate")
+	}
+	parsedCert1, err := x509.ParseCertificate(p1.Bytes)
+	if err != nil {
+		return false, err
+	}
+	p2, _ := pem.Decode(cert2)
+	if p2 == nil {
+		return false, errors.New("Unable to pem decode certificate")
+	}
+	parsedCert2, err := x509.ParseCertificate(p2.Bytes)
+	if err != nil {
+		return false, err
+	}
+	return parsedCert1.Equal(parsedCert2), nil
 }
 
 func displayName(name pkix.Name) string {
@@ -239,17 +294,19 @@ func (spec *Spec) Identity() (*core.Identity, error) {
 			&core.Root{
 				Type: "cfssl",
 				Metadata: map[string]string{
-					"host":    spec.CA.Remote,
-					"profile": spec.CA.Profile,
-					"label":   spec.CA.Label,
+					"host":          spec.CA.Remote,
+					"profile":       spec.CA.Profile,
+					"label":         spec.CA.Label,
+					"tls-remote-ca": spec.CA.RootCACert,
 				},
 			},
 		},
 		Profiles: map[string]map[string]string{
 			"cfssl": map[string]string{
-				"remote":  spec.CA.Remote,
-				"profile": spec.CA.Profile,
-				"label":   spec.CA.Label,
+				"remote":        spec.CA.Remote,
+				"profile":       spec.CA.Profile,
+				"label":         spec.CA.Label,
+				"tls-remote-ca": spec.CA.RootCACert,
 			},
 			"paths": map[string]string{
 				"private_key": spec.Key.Path,
@@ -398,34 +455,32 @@ func (spec *Spec) Lifespan() time.Duration {
 	}
 
 	// This bit of code is necessary to confirm that the cert/key are older than the spec definition.
+	if spec.IsChangedOnDisk(spec.Key.Path) || spec.IsChangedOnDisk(spec.Cert.Path) {
+		// This is necessary to essentially force cfssl to regenerate since it's not spec aware.
+		log.Infof("refreshing due to spec %s having a newer mtime than key or cert", spec.Path)
+		spec.ResetLifespan()
+		return 0
+	}
+	return spec.tr.Lifespan()
+}
+
+func (spec *Spec) IsChangedOnDisk(path string) bool {
 	specStat, err := os.Stat(spec.Path)
 	if err != nil {
 		// The assertion here is that the spec actually
 		// exists. If it doesn't, something is wrong with the
 		// world.
-		panic("cert: certificate spec doesn't exist during RefreshKeys()")
+		log.Warning("cert: IsChangedOnDisk: Spec file does not exist")
+		return true
 	}
-
-	isTooOld := func(path string) bool {
-		st, err := os.Stat(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				log.Errorf("while checking cert/key path %s, got path error %s", path, err)
-			}
-			return true
+	st, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Errorf("cert isChangedOnDisk: while checking path %s, got path error %s", path, err)
 		}
-		if specStat.ModTime().After(st.ModTime()) {
-			log.Infof("refreshing due to spec %s having a newer mtime then %s", spec.Path, path)
-			return true
-		}
-		return false
+		return true
 	}
-	if isTooOld(spec.Key.Path) || isTooOld(spec.Cert.Path) {
-		// This is necessary to essentially force cfssl to regenerate since it's not spec aware.
-		spec.ResetLifespan()
-		return 0
-	}
-	return spec.tr.Lifespan()
+	return specStat.ModTime().After(st.ModTime())
 }
 
 // Reset the lifespan to force cfssl to regenerate
@@ -441,6 +496,38 @@ func (spec *Spec) Certificate() *x509.Certificate {
 	}
 
 	return spec.tr.Provider.Certificate()
+}
+
+// CertificateAge returns age of certificate associated with spec
+func (spec *Spec) CertificateAge() time.Duration {
+	c := spec.Certificate()
+	if c == nil {
+		log.Debug("cert: CertificateAge: No certificate associated with spec")
+		return -1
+	}
+	now := time.Now()
+	return now.Sub(c.NotBefore)
+}
+
+// CA age returns age of CA associated with Spec
+func (spec *Spec) CAAge() time.Duration {
+	c := spec.CA.pem
+	if c == nil {
+		log.Debug("cert: CAAge: No certificate associated with spec")
+		return -1
+	}
+	certPem, _ := pem.Decode(c)
+	if certPem == nil {
+		log.Debug("cert: CAAge: Unable to pem decode certificate")
+		return -1
+	}
+	parsedCert, err := x509.ParseCertificate(certPem.Bytes)
+	if err != nil {
+		log.Debug("cert: CAAge: Unable to parse certificate")
+		return -1
+	}
+	now := time.Now()
+	return now.Sub(parsedCert.NotBefore)
 }
 
 // Queue marks the spec as being queued for renewal.
