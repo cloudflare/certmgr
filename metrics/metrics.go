@@ -27,16 +27,6 @@ var (
 		[]string{"spec_path", "svcmgr", "cert_action", "cert_age", "ca", "ca_age"},
 	)
 
-	// QueueCount counts the number of certificates actively in
-	// the renewal queue.
-	QueueCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "cert_renewal_queue",
-			Help: "number of certificates in the renewal queue",
-		},
-		[]string{"spec_path"},
-	)
-
 	// ExpireNext contains the time of the next certificate
 	// expiry.
 	ExpireNext = prometheus.NewGaugeVec(
@@ -125,7 +115,6 @@ func init() {
 	startTime = time.Now()
 
 	prometheus.MustRegister(WatchCount)
-	prometheus.MustRegister(QueueCount)
 	prometheus.MustRegister(ExpireNext)
 	prometheus.MustRegister(FailureCount)
 	prometheus.MustRegister(AlgorithmMismatchCount)
@@ -149,17 +138,6 @@ var indexPage = `<html>
       <li>Prometheus endpoint: <a href="/metrics"><code>/metrics</code></a></li>
       <li>pprof endpoint: <a href="/debug/pprof"><code>/debug/pprof</code></a></li>
     </ul>
-    <h4>Current metrics:</h4>
-    <ul>
-      <li>Watch count: %d</li>
-      <li>Certs in queue: %d</li>
-      <li>Hours until the next cert expires: %d</li>
-      <li>Number of times a certificate has failed to renew: %d</li>
-    </ul>
-    <h4>Certificates managed by this instance:</h4>
-    <ul>
-%s
-    </ul>
   </body>
 </html>
 `
@@ -167,7 +145,7 @@ var indexPage = `<html>
 func genServeIndex(addr, ilink string, certs string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		page := fmt.Sprintf(indexPage, startTime.Format("2006-01-02T15:04:05-0700"),
-			addr, ilink, certs)
+			addr, ilink)
 		io.WriteString(w, page)
 	}
 }
