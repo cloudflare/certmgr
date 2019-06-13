@@ -82,6 +82,8 @@ func (csm *CertServiceManager) EnforcePKI(enable_actions bool) (time.Duration, e
 
 		log.Info("manager: certificate successfully processed")
 	}
+	metrics.Expires.WithLabelValues(csm.Spec.Path, "cert").Set(float64(csm.CertExpireTime().Unix()))
+
 	return csm.Lifespan(), nil
 }
 
@@ -132,10 +134,13 @@ func (cert *CertServiceManager) RenewPKI() error {
 // CheckCA checks the CA on the certificate and restarts the service
 // if needed.
 func (spec *CertServiceManager) CheckCA() error {
-	if changed, err := spec.CA.Refresh(); err != nil {
+	var err error
+	var changed bool
+	if changed, err = spec.CA.Refresh(); err != nil {
 		metrics.ActionFailure.WithLabelValues(spec.Spec.Path, "CA").Inc()
 		return err
 	} else if changed {
+		metrics.Expires.WithLabelValues(spec.Spec.Path, "ca").Set(float64(spec.CAExpireTime().Unix()))
 		log.Debug("taking action due to CA refresh")
 		err := spec.TakeAction("CA")
 
@@ -143,9 +148,9 @@ func (spec *CertServiceManager) CheckCA() error {
 			metrics.ActionFailure.WithLabelValues(spec.Spec.Path, "CA").Inc()
 			log.Errorf("manager: %s", err)
 		}
-		return err
 	}
-	return nil
+	metrics.Expires.WithLabelValues(spec.Spec.Path, "ca").Set(float64(spec.CAExpireTime().Unix()))
+	return err
 }
 
 // CheckDiskPKI checks the PKI information on disk against cert spec and alerts upon differences
@@ -409,7 +414,7 @@ func (m *Manager) Load(forced bool) error {
 			return err
 		}
 		m.Certs = append(m.Certs, &CertServiceManager{cert, manager})
-		metrics.SpecWatchCount.WithLabelValues(cert.Path, s, cert.Action, cert.CertificateAge().String(), cert.CA.Label, cert.CAAge().String()).Inc()
+		metrics.SpecWatchCount.WithLabelValues(cert.Path, s, cert.Action, cert.CA.Label).Inc()
 		return nil
 	}
 
@@ -438,41 +443,7 @@ func (m *Manager) CheckCerts() {
 			log.Errorf("Failed processing %s due to %s", cert, err)
 		}
 	}
-
-	m.SetExpiresNext()
-}
-
-// SetExpiresNext sets the next expiration metric.
-func (m *Manager) SetExpiresNext() {
-	if m.Certs == nil || len(m.Certs) <= 0 {
-		return
-	}
-
-	var expires time.Time
-	var nextCert int
-	log.Debugf("manager: checking expiration on %d certificates", len(m.Certs))
-	for i := range m.Certs {
-		cert := m.Certs[i].Certificate()
-		if cert == nil {
-			log.Debugf("manager: spec has unloaded certificate (%s)", m.Certs[i])
-			continue
-		}
-
-		log.Debugf("manager: %s expires at %s", m.Certs[i], cert.NotAfter)
-		if expires.After(cert.NotAfter) || expires.IsZero() {
-			expires = cert.NotAfter
-			nextCert = i
-		}
-	}
-
-	if expires.IsZero() {
-		log.Debug("manager: all certificates are set to renew")
-		metrics.ExpireNext.WithLabelValues(m.Certs[nextCert].Spec.Path).Set(0)
-	} else {
-		next := expires.Sub(time.Now())
-		log.Debugf("manager: next certificate expires in %0.0f hours", next.Hours())
-		metrics.ExpireNext.WithLabelValues(m.Certs[nextCert].Spec.Path).Set(next.Hours())
-	}
+	log.Info("manager: finished checking certificates")
 }
 
 // Server runs the Manager server.
@@ -500,6 +471,5 @@ func (m *Manager) Server() {
 		}
 
 		m.CheckCerts()
-		m.SetExpiresNext()
 	}
 }

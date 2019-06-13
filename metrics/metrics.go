@@ -27,18 +27,18 @@ var (
 			Name:      "specs_watched_total",
 			Help:      "Number of specs being watched",
 		},
-		[]string{"spec_path", "svcmgr", "cert_action", "cert_age", "ca", "ca_age"},
+		[]string{"spec_path", "svcmgr", "action", "ca"},
 	)
 
 	// ExpireNext contains the time of the next certificate
 	// expiry.
-	ExpireNext = prometheus.NewGaugeVec(
+	Expires = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricsNamespace,
-			Name:      "cert_next_expires",
-			Help:      "the number of hours until the next certificate expires",
+			Name:      "cert_expire_timestamp",
+			Help:      "The unix time for when the given spec and type expires",
 		},
-		[]string{"spec_path"},
+		[]string{"spec_path", "type"},
 	)
 
 	// FailureCount contains a count of the number of failures to
@@ -126,8 +126,8 @@ var (
 func init() {
 	startTime = time.Now()
 
-	prometheus.MustRegister(WatchCount)
-	prometheus.MustRegister(ExpireNext)
+	prometheus.MustRegister(SpecWatchCount)
+	prometheus.MustRegister(Expires)
 	prometheus.MustRegister(FailureCount)
 	prometheus.MustRegister(AlgorithmMismatchCount)
 	prometheus.MustRegister(KeysizeMismatchCount)

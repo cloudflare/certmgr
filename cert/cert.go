@@ -265,7 +265,6 @@ type Spec struct {
 	// spec.
 	Path string
 
-	expires time.Time
 	tr      *transport.Transport
 }
 
@@ -482,6 +481,37 @@ func (spec *Spec) IsChangedOnDisk(path string) bool {
 	return specStat.ModTime().After(st.ModTime())
 }
 
+// CertExpireTime returns the time at which this spec's Certificate is no
+// longer valid.
+func (spec *Spec) CertExpireTime() time.Time {
+	cert := spec.tr.Provider.Certificate()
+	if cert != nil {
+		return spec.tr.Provider.Certificate().NotAfter
+	}
+	return time.Time{}
+}
+
+// CertExpireTime returns the time at which this spec's CA is no
+// longer valid.
+func (spec *Spec) CAExpireTime() time.Time {
+	c := spec.CA.pem
+	if c == nil {
+		log.Debug("spec %s: No CA loaded", spec)
+		return time.Time{}
+	}
+	certPem, _ := pem.Decode(c)
+	if certPem == nil {
+		log.Debug("spec %s: Unable to pem decode CA certificate", spec)
+		return time.Time{}
+	}
+	parsedCert, err := x509.ParseCertificate(certPem.Bytes)
+	if err != nil {
+		log.Debug("spec %s: Unable to parse certificate", spec)
+		return time.Time{}
+	}
+	return parsedCert.NotAfter
+}
+
 // Reset the lifespan to force cfssl to regenerate
 func (spec *Spec) ResetLifespan() {
 	cert := spec.tr.Provider.Certificate()
@@ -498,38 +528,6 @@ func (spec *Spec) Certificate() *x509.Certificate {
 	}
 
 	return spec.tr.Provider.Certificate()
-}
-
-// CertificateAge returns age of certificate associated with spec
-func (spec *Spec) CertificateAge() time.Duration {
-	c := spec.Certificate()
-	if c == nil {
-		log.Debug("cert: CertificateAge: No certificate associated with spec")
-		return -1
-	}
-	now := time.Now()
-	return now.Sub(c.NotBefore)
-}
-
-// CA age returns age of CA associated with Spec
-func (spec *Spec) CAAge() time.Duration {
-	c := spec.CA.pem
-	if c == nil {
-		log.Debug("cert: CAAge: No certificate associated with spec")
-		return -1
-	}
-	certPem, _ := pem.Decode(c)
-	if certPem == nil {
-		log.Debug("cert: CAAge: Unable to pem decode certificate")
-		return -1
-	}
-	parsedCert, err := x509.ParseCertificate(certPem.Bytes)
-	if err != nil {
-		log.Debug("cert: CAAge: Unable to parse certificate")
-		return -1
-	}
-	now := time.Now()
-	return now.Sub(parsedCert.NotBefore)
 }
 
 // Backoff returns the backoff delay.
