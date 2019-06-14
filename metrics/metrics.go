@@ -9,7 +9,6 @@ import (
 	_ "net/http/pprof" // start a pprof endpoint
 	"time"
 
-	"github.com/cloudflare/certmgr/cert"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -143,7 +142,6 @@ var indexPage = `<html>
   <body>
     <h2>Certificate Manager</h2>
     <p>Server started at %s, listening on %s</p>
-    %s
     <p><a href="https://github.com/cloudflare/certmgr/">GitHub</a></p>
     <h4>Endpoints</h4>
     <ul>
@@ -154,38 +152,23 @@ var indexPage = `<html>
 </html>
 `
 
-func genServeIndex(addr, ilink string, certs string) func(http.ResponseWriter, *http.Request) {
+func genServeIndex(addr string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		page := fmt.Sprintf(indexPage, startTime.Format("2006-01-02T15:04:05-0700"),
-			addr, ilink)
+		page := fmt.Sprintf(indexPage, startTime.Format("2006-01-02T15:04:05-0700"), addr)
 		io.WriteString(w, page)
 	}
 }
 
 // Start initialises the Prometheus endpoint if metrics have been
 // configured.
-func Start(addr, port, ilink string, specs []*cert.Spec) {
+func Start(addr, port string) {
 	if addr == "" || port == "" {
 		log.Warning("metrics: no prometheus address or port configured")
 		return
 	}
 
-	var certs string
-
-	for _, cert := range specs {
-		var service string
-		if cert.Service != "" {
-			service = " for " + cert.Service
-			if cert.Action != "" {
-				service += " (action = " + cert.Action + ")"
-			}
-		}
-
-		certs += fmt.Sprintf("      <li>%s%s</li>", cert, service)
-	}
-
 	addr = net.JoinHostPort(addr, port)
-	http.HandleFunc("/", genServeIndex(addr, ilink, certs))
+	http.HandleFunc("/", genServeIndex(addr))
 	http.Handle("/metrics", promhttp.Handler())
 
 	log.Infof("metrics: starting Prometheus endpoint on http://%s/", addr)
