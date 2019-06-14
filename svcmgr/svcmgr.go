@@ -15,6 +15,7 @@ import (
 
 type managerCreator func(action string, service string) (Manager, error)
 
+// SupportedBackends map of 'backend' -> creator function.
 var SupportedBackends = map[string]managerCreator{}
 
 // This defines the list of actions that the manager supports taking
@@ -27,7 +28,7 @@ var defaultValidActions = map[string]bool{
 // The Manager interface provides a common API for interacting with
 // service managers.
 type Manager interface {
-	TakeAction(change_type string, spec_path string, ca_path string, cert_path string, key_path string) error
+	TakeAction(changeType string, specPath string, caPath string, certPath string, keyPath string) error
 }
 
 func run(prog string, args ...string) error {
@@ -47,25 +48,25 @@ func New(name string, action string, service string) (Manager, error) {
 	if action == "nop" {
 		name = "dummy"
 	}
-	sm_func, ok := SupportedBackends[name]
+	smFunc, ok := SupportedBackends[name]
 	if !ok {
 		return nil, fmt.Errorf("svcmgr: unsupported service manager '%s'", name)
 	}
 
-	manager, err := sm_func(action, service)
+	manager, err := smFunc(action, service)
 	return manager, err
 }
 
 type simpleManager struct {
-	action_is_last bool
-	binary         string
-	action         string
-	service        string
+	actionIsLastArgument bool
+	binary               string
+	action               string
+	service              string
 }
 
 func (sm simpleManager) TakeAction(string, string, string, string, string) error {
 	log.Infof("%ving service %v", sm.action, sm.service)
-	if sm.action_is_last {
+	if sm.actionIsLastArgument {
 		return run(sm.binary, sm.service, sm.action)
 	}
 	err := run(sm.binary, sm.action, sm.service)
@@ -75,7 +76,7 @@ func (sm simpleManager) TakeAction(string, string, string, string, string) error
 	return err
 }
 
-func registerSimpleManager(binary string, action_is_last bool) managerCreator {
+func registerSimpleManager(binary string, actionIsLastArgument bool) managerCreator {
 	return func(action string, service string) (Manager, error) {
 		if !defaultValidActions[action] {
 			return nil, fmt.Errorf("svcmgr: action '%s' is not supported by manager %s", action, binary)
@@ -83,10 +84,10 @@ func registerSimpleManager(binary string, action_is_last bool) managerCreator {
 			return nil, fmt.Errorf("svcmgr: manager '%s': action '%s' specified, but service is empty", binary, action)
 		}
 		return &simpleManager{
-			binary:         binary,
-			action:         action,
-			service:        service,
-			action_is_last: action_is_last,
+			binary:               binary,
+			action:               action,
+			service:              service,
+			actionIsLastArgument: actionIsLastArgument,
 		}, nil
 	}
 }

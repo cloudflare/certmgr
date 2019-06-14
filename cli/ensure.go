@@ -17,10 +17,10 @@ var ensureCmd = &cobra.Command{
 	Short: "Ensure all certificate specs have matching keypairs.",
 	Long: `Certificate manager will load all certificate specs, and ensure that the
 TLS key pairs they identify exist, are valid, and that they are up-to-date.`,
-	Run: Ensure,
+	Run: ensure,
 }
 
-func Ensure(cmd *cobra.Command, args []string) {
+func ensure(cmd *cobra.Command, args []string) {
 	mgr, err := newManager()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)

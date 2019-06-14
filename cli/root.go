@@ -69,6 +69,7 @@ func root(cmd *cobra.Command, args []string) {
 	mgr.Server(strict)
 }
 
+// RootCmd this is our command processor for CLI interactions
 var RootCmd = &cobra.Command{
 	Use:   "certmgr",
 	Short: "Manage TLS certificates for multiple services",
@@ -76,6 +77,7 @@ var RootCmd = &cobra.Command{
 	Run:   root,
 }
 
+// Execute execute our argument parser
 func Execute() {
 	if err := RootCmd.Execute(); err != nil {
 		fmt.Println(err)
