@@ -1,15 +1,10 @@
 package mgr
 
 import (
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
 	"github.com/cloudflare/certmgr/cert"
@@ -43,7 +38,7 @@ func (csm *CertServiceManager) String() string {
 // a hint to the invoker as to when the next refresh is required- that said
 // the invoker should back off and try a refresh.
 func (csm *CertServiceManager) EnforcePKI(enable_actions bool) (time.Duration, error) {
-	err := csm.CheckDiskPKI()
+	err := csm.Spec.CheckDiskPKI()
 	if err != nil {
 		log.Debugf("manager: %s, checkdiskpki: %s.  Forcing refresh.", csm, err.Error())
 		csm.ResetLifespan()
@@ -156,92 +151,6 @@ func (spec *CertServiceManager) CheckCA() error {
 	return err
 }
 
-// CheckDiskPKI checks the PKI information on disk against cert spec and alerts upon differences
-// Specifically, it checks that private key on disk matches spec algorithm & keysize,
-// and certificate on disk matches CSR spec info
-func (csm *CertServiceManager) CheckDiskPKI() error {
-	certPath := csm.Spec.Cert.Path
-	keyPath := csm.Spec.Key.Path
-	specPath := csm.Spec.Path
-	csrRequest := csm.Spec.Request
-
-	// Read private key algorithm and keysize from disk, determine if RSA or ECDSA
-	keyData, err := ioutil.ReadFile(keyPath)
-	if err != nil {
-		return err
-	}
-	pemKey, _ := pem.Decode(keyData)
-	if pemKey == nil {
-		return errors.New("Unable to pem decode private key on disk")
-	}
-
-	var algDisk string
-	var sizeDisk int
-	privKey, err := x509.ParsePKCS1PrivateKey(pemKey.Bytes)
-	if err != nil {
-		privKey, err := x509.ParseECPrivateKey(pemKey.Bytes)
-		if err != nil {
-			// If we get here, then invalid key type
-			return errors.New("manager: Unable to parse private key algorithm from disk")
-		}
-		// If we get here, then it's ECDSA
-		algDisk = "ecdsa"
-		sizeDisk = privKey.Curve.Params().BitSize
-	} else {
-		//If we get here, then it's RSA
-		algDisk = "rsa"
-		sizeDisk = privKey.N.BitLen()
-	}
-
-	// Check algorithm and keysize of private key on disk against what's defined in spec
-	algSpec := csrRequest.KeyRequest.Algo()
-	sizeSpec := csrRequest.KeyRequest.Size()
-
-	if algDisk != algSpec {
-		metrics.AlgorithmMismatchCount.WithLabelValues(specPath).Set(1)
-		return fmt.Errorf("manager: disk alg is %s but spec alg is %s\n", algDisk, algSpec)
-	} else {
-		metrics.AlgorithmMismatchCount.WithLabelValues(specPath).Set(0)
-	}
-
-	if sizeDisk != sizeSpec {
-		metrics.KeysizeMismatchCount.WithLabelValues(specPath).Set(1)
-		return fmt.Errorf("manager: disk key size is %d but spec key size is %d\n", sizeDisk, sizeSpec)
-	} else {
-		metrics.KeysizeMismatchCount.WithLabelValues(specPath).Set(0)
-	}
-
-	// Check that certificate hostnames match spec hostnames
-	certData, err := ioutil.ReadFile(certPath)
-	if err != nil {
-		return err
-	}
-	p, _ := pem.Decode(certData)
-	if p == nil {
-		return errors.New("Unable to pem decode certificate on disk")
-	}
-	cert, err := x509.ParseCertificate(p.Bytes)
-	if err != nil {
-		return err
-	}
-	if !hostnamesEquals(csrRequest.Hosts, cert.DNSNames) {
-		metrics.HostnameMismatchCount.WithLabelValues(specPath).Set(1)
-		return errors.New("manager: DNS names in cert on disk don't match with hostnames in spec")
-	} else {
-		metrics.HostnameMismatchCount.WithLabelValues(specPath).Set(0)
-	}
-
-	// Check if cert and key are valid pair
-	tlsCert, err := tls.X509KeyPair(certData, keyData)
-	if err != nil || tlsCert.Leaf != nil {
-		metrics.KeypairMismatchCount.WithLabelValues(specPath).Set(1)
-		return fmt.Errorf("manager: Certificate and key on disk are not valid keypair: %s", err)
-	} else {
-		metrics.KeypairMismatchCount.WithLabelValues(specPath).Set(0)
-	}
-	return nil
-}
-
 // The Manager structure contains the certificates to be managed. A
 // manager needs to be constructed with one of the New functions, and
 // should not be constructed by hand.
@@ -333,21 +242,6 @@ var validExtensions = map[string]bool{
 	".json": true,
 	".yaml": true,
 	".yml":  true,
-}
-
-// Compare if hostnames in certificate and spec are equal
-func hostnamesEquals(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	sort.Strings(a)
-	sort.Strings(b)
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // Load reads the certificate specs from the spec directory.

@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -64,4 +65,19 @@ func displayName(name pkix.Name) string {
 	}
 
 	return ""
+}
+
+// Compare if hostnames in certificate and spec are equal
+func hostnamesEquals(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	sort.Strings(a)
+	sort.Strings(b)
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }
