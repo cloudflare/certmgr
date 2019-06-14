@@ -65,8 +65,6 @@ func root(cmd *cobra.Command, args []string) {
 	metrics.Start(
 		viper.GetString("metrics_address"),
 		viper.GetString("metrics_port"),
-		viper.GetString("index_extra_html"),
-		certs,
 	)
 	mgr.Server(strict)
 }
@@ -120,8 +118,6 @@ func initConfig() {
 
 	viper.SetEnvPrefix("CERTMGR")
 	viper.AutomaticEnv() // read in environment variables that match
-
-	viper.SetDefault("index_extra_html", "")
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
