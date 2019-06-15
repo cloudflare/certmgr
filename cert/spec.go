@@ -258,6 +258,7 @@ func (spec *Spec) Lifespan() time.Duration {
 	return spec.tr.Lifespan()
 }
 
+// IsChangedOnDisk method to report if the given path is older than the spec
 func (spec *Spec) IsChangedOnDisk(path string) bool {
 	specStat, err := os.Stat(spec.Path)
 	if err != nil {
@@ -320,16 +321,14 @@ func (spec *Spec) CheckDiskPKI() error {
 	if algDisk != algSpec {
 		metrics.AlgorithmMismatchCount.WithLabelValues(spec.Path).Set(1)
 		return fmt.Errorf("manager: disk alg is %s but spec alg is %s\n", algDisk, algSpec)
-	} else {
-		metrics.AlgorithmMismatchCount.WithLabelValues(spec.Path).Set(0)
 	}
+	metrics.AlgorithmMismatchCount.WithLabelValues(spec.Path).Set(0)
 
 	if sizeDisk != sizeSpec {
 		metrics.KeysizeMismatchCount.WithLabelValues(spec.Path).Set(1)
 		return fmt.Errorf("manager: disk key size is %d but spec key size is %d\n", sizeDisk, sizeSpec)
-	} else {
-		metrics.KeysizeMismatchCount.WithLabelValues(spec.Path).Set(0)
 	}
+	metrics.KeysizeMismatchCount.WithLabelValues(spec.Path).Set(0)
 
 	// Check that certificate hostnames match spec hostnames
 	certData, err := ioutil.ReadFile(certPath)
@@ -347,18 +346,16 @@ func (spec *Spec) CheckDiskPKI() error {
 	if !hostnamesEquals(csrRequest.Hosts, cert.DNSNames) {
 		metrics.HostnameMismatchCount.WithLabelValues(spec.Path).Set(1)
 		return errors.New("manager: DNS names in cert on disk don't match with hostnames in spec")
-	} else {
-		metrics.HostnameMismatchCount.WithLabelValues(spec.Path).Set(0)
 	}
+	metrics.HostnameMismatchCount.WithLabelValues(spec.Path).Set(0)
 
 	// Check if cert and key are valid pair
 	tlsCert, err := tls.X509KeyPair(certData, keyData)
 	if err != nil || tlsCert.Leaf != nil {
 		metrics.KeypairMismatchCount.WithLabelValues(spec.Path).Set(1)
 		return fmt.Errorf("manager: Certificate and key on disk are not valid keypair: %s", err)
-	} else {
-		metrics.KeypairMismatchCount.WithLabelValues(spec.Path).Set(0)
 	}
+	metrics.KeypairMismatchCount.WithLabelValues(spec.Path).Set(0)
 	return nil
 }
 
@@ -393,7 +390,7 @@ func (spec *Spec) CAExpireTime() time.Time {
 	return parsedCert.NotAfter
 }
 
-// Reset the lifespan to force cfssl to regenerate
+// ResetLifespan Reset the lifespan to force cfssl to regenerate
 func (spec *Spec) ResetLifespan() {
 	cert := spec.tr.Provider.Certificate()
 	if cert != nil {

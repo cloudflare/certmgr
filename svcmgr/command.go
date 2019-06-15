@@ -16,13 +16,13 @@ type commandManager struct {
 	command string
 }
 
-func (cm commandManager) TakeAction(change_type string, spec_path string, ca_path string, cert_path string, key_path string) error {
+func (cm commandManager) TakeAction(changeType string, specPath string, caPath string, certPath string, keyPath string) error {
 	env := []string{
-		"CERTMGR_CA_PATH=" + ca_path,
-		"CERTMGR_CERT_PATH=" + cert_path,
-		"CERTMGR_KEY_PATH=" + key_path,
-		"CERTMGR_SPEC_PATH=" + spec_path,
-		"CERTMGR_CHANGE_TYPE=" + change_type,
+		"CERTMGR_CA_PATH=" + caPath,
+		"CERTMGR_CERT_PATH=" + certPath,
+		"CERTMGR_KEY_PATH=" + keyPath,
+		"CERTMGR_SPEC_PATH=" + specPath,
+		"CERTMGR_CHANGE_TYPE=" + changeType,
 	}
 	return runEnv(env, shellBinary, "-c", cm.command)
 }

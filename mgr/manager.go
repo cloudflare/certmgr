@@ -22,8 +22,8 @@ const DefaultInterval = time.Hour
 // Manager. This defaults to 72 hours.
 const DefaultBefore = time.Hour * 72
 
-// This exists purely so we can bind custom svcmgr's per cert; this is primarily
-// used for 'command' svcmgr's that don't follow the norm.
+// CertServiceManager this exists purely so we can bind custom svcmgr's per cert
+// This is primarily used for 'command' svcmgr's that don't follow the norm.
 type CertServiceManager struct {
 	*cert.Spec
 	serviceManager svcmgr.Manager
@@ -33,11 +33,11 @@ func (csm *CertServiceManager) String() string {
 	return fmt.Sprintf("spec: %s", csm.Spec.Path)
 }
 
-// Process a spec updating content on disk, taking action as needed.
+// EnforcePKI Process a spec updating content on disk, taking action as needed.
 // Returns (TTL for PKI, error).  If an error occurs, the ttl is at best
 // a hint to the invoker as to when the next refresh is required- that said
 // the invoker should back off and try a refresh.
-func (csm *CertServiceManager) EnforcePKI(enable_actions bool) (time.Duration, error) {
+func (csm *CertServiceManager) EnforcePKI(enableActions bool) (time.Duration, error) {
 	err := csm.Spec.CheckDiskPKI()
 	if err != nil {
 		log.Debugf("manager: %s, checkdiskpki: %s.  Forcing refresh.", csm, err.Error())
@@ -64,7 +64,7 @@ func (csm *CertServiceManager) EnforcePKI(enable_actions bool) (time.Duration, e
 		}
 
 		log.Debug("taking action due to key refresh")
-		if enable_actions {
+		if enableActions {
 			err = csm.TakeAction("key")
 		} else {
 			log.Infof("skipping actions for %s due to calling mode", csm)
@@ -85,69 +85,69 @@ func (csm *CertServiceManager) EnforcePKI(enable_actions bool) (time.Duration, e
 	return csm.Lifespan(), nil
 }
 
-func (csm *CertServiceManager) TakeAction(change_type string) error {
-	log.Infof("manager: executing configured action due to change type %s for %s", change_type, csm.Cert.Path)
-	ca_path := ""
+// TakeAction execute the configured svcmgr Action for this spec
+func (csm *CertServiceManager) TakeAction(changeType string) error {
+	log.Infof("manager: executing configured action due to change type %s for %s", changeType, csm.Cert.Path)
+	caPath := ""
 	if csm.CA.File != nil {
-		ca_path = csm.CA.File.Path
+		caPath = csm.CA.File.Path
 	}
-	cert_path := csm.Cert.Path
-	key_path := csm.Key.Path
-	metrics.ActionCount.WithLabelValues(csm.Cert.Path, change_type).Inc()
-	return csm.serviceManager.TakeAction(change_type, csm.Path, ca_path, cert_path, key_path)
+	metrics.ActionCount.WithLabelValues(csm.Cert.Path, changeType).Inc()
+	return csm.serviceManager.TakeAction(changeType, csm.Path, caPath, csm.Cert.Path, csm.Key.Path)
 }
 
 // The maximum number of attempts before giving up.
 const maxAttempts = 5
 
-func (cert *CertServiceManager) RenewPKI() error {
+// RenewPKI Try to update the on disk PKI content with a fresh CA/cert as needed
+func (csm *CertServiceManager) RenewPKI() error {
 	start := time.Now()
 	for attempts := 0; attempts < maxAttempts; attempts++ {
-		log.Infof("manager: processing certificate %s (attempt %d)", cert, attempts+1)
-		err := cert.RefreshKeys()
+		log.Infof("manager: processing certificate %s (attempt %d)", csm, attempts+1)
+		err := csm.RefreshKeys()
 		if err != nil {
 			if isAuthError(err) {
 				// Killing the server is really the
 				// only valid option here; it will
 				// force an investigation into why the
 				// auth key is bad.
-				log.Fatalf("invalid auth key for %s", cert)
+				log.Fatalf("invalid auth key for %s", csm)
 			}
-			backoff := cert.Backoff()
+			backoff := csm.Backoff()
 			log.Warningf("manager: failed to renew certificate (err=%s), backing off for %0.0f seconds", err, backoff.Seconds())
-			metrics.FailureCount.WithLabelValues(cert.Spec.Path).Inc()
+			metrics.FailureCount.WithLabelValues(csm.Spec.Path).Inc()
 			time.Sleep(backoff)
 			continue
 		}
 
-		cert.ResetBackoff()
+		csm.ResetBackoff()
 		return nil
 	}
 	stop := time.Now()
 
-	cert.ResetBackoff()
-	return fmt.Errorf("manager: failed to renew %s in %d attempts (in %0.0f seconds)", cert, maxAttempts, stop.Sub(start).Seconds())
+	csm.ResetBackoff()
+	return fmt.Errorf("manager: failed to renew %s in %d attempts (in %0.0f seconds)", csm, maxAttempts, stop.Sub(start).Seconds())
 }
 
 // CheckCA checks the CA on the certificate and restarts the service
 // if needed.
-func (spec *CertServiceManager) CheckCA() error {
+func (csm *CertServiceManager) CheckCA() error {
 	var err error
 	var changed bool
-	if changed, err = spec.CA.Refresh(); err != nil {
-		metrics.ActionFailure.WithLabelValues(spec.Spec.Path, "CA").Inc()
+	if changed, err = csm.CA.Refresh(); err != nil {
+		metrics.ActionFailure.WithLabelValues(csm.Spec.Path, "CA").Inc()
 		return err
 	} else if changed {
-		metrics.Expires.WithLabelValues(spec.Spec.Path, "ca").Set(float64(spec.CAExpireTime().Unix()))
+		metrics.Expires.WithLabelValues(csm.Spec.Path, "ca").Set(float64(csm.CAExpireTime().Unix()))
 		log.Debug("taking action due to CA refresh")
-		err := spec.TakeAction("CA")
+		err := csm.TakeAction("CA")
 
 		if err != nil {
-			metrics.ActionFailure.WithLabelValues(spec.Spec.Path, "CA").Inc()
+			metrics.ActionFailure.WithLabelValues(csm.Spec.Path, "CA").Inc()
 			log.Errorf("manager: %s", err)
 		}
 	}
-	metrics.Expires.WithLabelValues(spec.Spec.Path, "ca").Set(float64(spec.CAExpireTime().Unix()))
+	metrics.Expires.WithLabelValues(csm.Spec.Path, "ca").Set(float64(csm.CAExpireTime().Unix()))
 	return err
 }
 
@@ -177,6 +177,7 @@ type Manager struct {
 	Certs []*CertServiceManager `yaml:",omitempty"`
 }
 
+// UnmarshallYAML update a Manager instance via deserializing the given yaml
 func (m *Manager) UnmarshallYAML(unmarshall func(interface{}) error) error {
 	m = &Manager{
 		Before:   DefaultBefore,

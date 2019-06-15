@@ -29,7 +29,7 @@ var (
 		[]string{"spec_path", "svcmgr", "action", "ca"},
 	)
 
-	// ExpireNext contains the time of the next certificate
+	// Expires contains the time of the next certificate
 	// expiry.
 	Expires = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
