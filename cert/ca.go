@@ -34,15 +34,15 @@ type CA struct {
 	pem         []byte
 }
 
-// GetPEM is for testing only!
+// getPEM is for testing only!
 // Getter for CA cert PEM
-func (ca *CA) GetPEM() []byte {
+func (ca *CA) getPEM() []byte {
 	return ca.pem
 }
 
-// SetPEM is for testing only!
+// setPEM is for testing only!
 // Setter for CA cert PEM
-func (ca *CA) SetPEM(pem []byte) {
+func (ca *CA) setPEM(pem []byte) {
 	ca.pem = pem
 }
 

@@ -47,9 +47,9 @@ func TestCompareCertificatesNewlines(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			ca1.SetPEM(googlePem)
-			ca2.SetPEM(newlinePem)
-			isSame, err := CompareCertificates(ca1.GetPEM(), ca2.GetPEM())
+			ca1.setPEM(googlePem)
+			ca2.setPEM(newlinePem)
+			isSame, err := CompareCertificates(ca1.getPEM(), ca2.getPEM())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -71,9 +71,9 @@ func TestCompareCertificateDifferent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ca1.SetPEM(googlePem)
-	ca2.SetPEM(digicertPem)
-	isSame, err := CompareCertificates(ca1.GetPEM(), ca2.GetPEM())
+	ca1.setPEM(googlePem)
+	ca2.setPEM(digicertPem)
+	isSame, err := CompareCertificates(ca1.getPEM(), ca2.getPEM())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,9 +88,9 @@ func TestCompareCertificateNil(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ca1.SetPEM(digicertPem)
-	ca2.SetPEM(nil)
-	isSame, err := CompareCertificates(ca1.GetPEM(), ca2.GetPEM())
+	ca1.setPEM(digicertPem)
+	ca2.setPEM(nil)
+	isSame, err := CompareCertificates(ca1.getPEM(), ca2.getPEM())
 	if strings.Compare(err.Error(), "Unable to pem decode certificate") != 0 || isSame {
 		t.Fatal(err)
 	}
@@ -102,9 +102,9 @@ func TestCompareCertificateEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ca1.SetPEM(googlePem)
-	ca2.SetPEM([]byte{})
-	isSame, err := CompareCertificates(ca1.GetPEM(), ca2.GetPEM())
+	ca1.setPEM(googlePem)
+	ca2.setPEM([]byte{})
+	isSame, err := CompareCertificates(ca1.getPEM(), ca2.getPEM())
 	if strings.Compare(err.Error(), "Unable to pem decode certificate") != 0 || isSame {
 		t.Fatal(err)
 	}
