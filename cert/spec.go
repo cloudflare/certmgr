@@ -320,13 +320,13 @@ func (spec *Spec) CheckDiskPKI() error {
 
 	if algDisk != algSpec {
 		metrics.AlgorithmMismatchCount.WithLabelValues(spec.Path).Set(1)
-		return fmt.Errorf("manager: disk alg is %s but spec alg is %s\n", algDisk, algSpec)
+		return fmt.Errorf("manager: disk alg is %s but spec alg is %s", algDisk, algSpec)
 	}
 	metrics.AlgorithmMismatchCount.WithLabelValues(spec.Path).Set(0)
 
 	if sizeDisk != sizeSpec {
 		metrics.KeysizeMismatchCount.WithLabelValues(spec.Path).Set(1)
-		return fmt.Errorf("manager: disk key size is %d but spec key size is %d\n", sizeDisk, sizeSpec)
+		return fmt.Errorf("manager: disk key size is %d but spec key size is %d", sizeDisk, sizeSpec)
 	}
 	metrics.KeysizeMismatchCount.WithLabelValues(spec.Path).Set(0)
 
