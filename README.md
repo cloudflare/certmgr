@@ -37,10 +37,6 @@ has the following endpoints:
 * `/debug/pprof` is a
   [net/http/pprof](https://golang.org/pkg/net/http/pprof/) endpoint.
 
-In the configuration file, the `index_extra_html` may contain HTML
-that will be inserted at the top of the file, after the server start
-time and current host:port.
-
 ## Metrics
 
 The following metrics are collected by Prometheus:
@@ -71,17 +67,6 @@ interval: 30m
 
 metrics_port: 8080
 metrics_address: localhost
-
-index_extra_html: |
-  <hr>
-  <p>Links:</p>
-  <ul>
-    <li><strong><a href="https://internal.corp/sys/certmgr/runbook">Service runbook</a></strong></li>
-	<li><a href="https://internal.corp/sys/certmgr">Component homepage</a></li>
-	<li><a href="https://internal.corp/sys/ca">Internal CA documentation</a></li>
-	<li><a href="https://certs.prometheus.internal.corp/alerts">Current TLS-related alerts</a></li>
-  </ul>
-  <hr>
 ```
 
 This contains all of the currently available parameters:
@@ -99,8 +84,6 @@ This contains all of the currently available parameters:
 * `metrics_address`: specifies the address for the Prometheus HTTP
   endpoint.
 * `metrics_port`: specifies the port for the Prometheus HTTP endpoint.
-* `index_extra_html`: specifies additional links that may be
-  site-specific (such as the runbook) for the service index page.
 
 ## Certificate Specs
 

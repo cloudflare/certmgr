@@ -5,6 +5,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/cloudflare/certmgr/cert"
 	"github.com/cloudflare/certmgr/metrics"
@@ -17,13 +18,14 @@ import (
 
 var cfgFile string
 var logLevel string
-var debug bool
+var debug, strict bool
 var requireSpecs bool
 
 var manager struct {
 	Dir            string
 	ServiceManager string
-	Before         string
+	Before         time.Duration
+	Interval       time.Duration
 }
 
 func newManager() (*mgr.Manager, error) {
@@ -31,8 +33,8 @@ func newManager() (*mgr.Manager, error) {
 		viper.GetString("dir"),
 		viper.GetString("default_remote"),
 		viper.GetString("svcmgr"),
-		viper.GetString("before"),
-		viper.GetString("interval"),
+		viper.GetDuration("before"),
+		viper.GetDuration("interval"),
 	)
 }
 
@@ -41,8 +43,11 @@ func root(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatalf("certmgr: %s", err)
 	}
-
-	err = mgr.Load(false)
+	strict, err := cmd.Flags().GetBool("strict")
+	if err != nil {
+		strict = false
+	}
+	err = mgr.Load(false, strict)
 	if err != nil {
 		log.Fatalf("certmgr: %s", err)
 	}
@@ -60,12 +65,11 @@ func root(cmd *cobra.Command, args []string) {
 	metrics.Start(
 		viper.GetString("metrics_address"),
 		viper.GetString("metrics_port"),
-		viper.GetString("index_extra_html"),
-		certs,
 	)
-	mgr.Server()
+	mgr.Server(strict)
 }
 
+// RootCmd this is our command processor for CLI interactions
 var RootCmd = &cobra.Command{
 	Use:   "certmgr",
 	Short: "Manage TLS certificates for multiple services",
@@ -73,6 +77,7 @@ var RootCmd = &cobra.Command{
 	Run:   root,
 }
 
+// Execute execute our argument parser
 func Execute() {
 	if err := RootCmd.Execute(); err != nil {
 		fmt.Println(err)
@@ -91,13 +96,16 @@ func init() {
 	}
 	sort.Strings(backends)
 	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", fmt.Sprintf("service manager, must be one of: %s", strings.Join(backends, ", ")))
-	RootCmd.PersistentFlags().StringVarP(&manager.Before, "before", "t", "", "how long before certificates expire to start renewing (in the form Nh)")
+	RootCmd.PersistentFlags().DurationVarP(&manager.Before, "before", "t", mgr.DefaultBefore, "how long before certificates expire to start renewing (in duration format)")
+	RootCmd.PersistentFlags().DurationVarP(&manager.Interval, "interval", "i", mgr.DefaultInterval, "how long to sleep before checking for renewal (in duration format)")
 	RootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug mode")
+	RootCmd.PersistentFlags().BoolVar(&strict, "strict", false, "refuse to load certificate without valid renewal action defined")
 	RootCmd.Flags().BoolVarP(&requireSpecs, "requireSpecs", "", false, "fail the daemon startup if no specs were found in the directory to watch")
 
 	viper.BindPFlag("dir", RootCmd.PersistentFlags().Lookup("dir"))
 	viper.BindPFlag("svcmgr", RootCmd.PersistentFlags().Lookup("svcmgr"))
 	viper.BindPFlag("before", RootCmd.PersistentFlags().Lookup("before"))
+	viper.BindPFlag("interval", RootCmd.PersistentFlags().Lookup("interval"))
 	viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 }
 
@@ -112,8 +120,6 @@ func initConfig() {
 
 	viper.SetEnvPrefix("CERTMGR")
 	viper.AutomaticEnv() // read in environment variables that match
-
-	viper.SetDefault("index_extra_html", "")
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {

@@ -2,18 +2,17 @@ language: go
 dist: trusty
 sudo: false
 go:
-  - 1.9.x
-  - 1.10.x
   - 1.11.x
+  - 1.12.x
 install:
-  - go get github.com/Masterminds/glide
+  - go get github.com/golang/dep/cmd/dep
 script:
-  - go test -v $(glide nv)
+  - go test -v ./...
 
 jobs:
   include:
   - stage: Cross-Build
-    go: 1.9.x
+    go: 1.12.x
     env:
       - CGO_ENABLED=0
     script:

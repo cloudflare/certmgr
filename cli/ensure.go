@@ -17,17 +17,21 @@ var ensureCmd = &cobra.Command{
 	Short: "Ensure all certificate specs have matching keypairs.",
 	Long: `Certificate manager will load all certificate specs, and ensure that the
 TLS key pairs they identify exist, are valid, and that they are up-to-date.`,
-	Run: Ensure,
+	Run: ensure,
 }
 
-func Ensure(cmd *cobra.Command, args []string) {
+func ensure(cmd *cobra.Command, args []string) {
 	mgr, err := newManager()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		os.Exit(1)
 	}
 
-	err = mgr.Load(false)
+	strict, err := cmd.Flags().GetBool("strict")
+	if err != nil {
+		strict = false
+	}
+	err = mgr.Load(false, strict)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		os.Exit(1)
@@ -38,19 +42,30 @@ func Ensure(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	err = mgr.MustCheckCerts(ensureTolerance, enableActions, forceRegen)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
-		os.Exit(1)
+	if ensureTolerance < 1 {
+		ensureTolerance = 1
 	}
-
-	err = mgr.CheckDiskPKI()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
-		os.Exit(1)
+	failedSpecs := 0
+	for _, cert := range mgr.Certs {
+		for attempt := ensureTolerance; attempt > 0; attempt-- {
+			if forceRegen {
+				cert.ResetLifespan()
+			}
+			_, err = cert.EnforcePKI(enableActions)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed processing spec %s due to %s; %d remaining attempts", cert.Spec.Path, err, attempt)
+			} else {
+				break
+			}
+		}
+		if err != nil {
+			failedSpecs++
+		}
 	}
-
-	fmt.Println("OK")
+	if failedSpecs == 0 {
+		fmt.Println("Ok")
+	}
+	os.Exit(failedSpecs)
 }
 
 func init() {
