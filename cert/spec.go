@@ -18,6 +18,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/cloudflare/certmgr/metrics"
+	"github.com/cloudflare/certmgr/svcmgr"
 	"github.com/cloudflare/cfssl/csr"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/cfssl/transport"
@@ -32,7 +33,9 @@ type Spec struct {
 	// globally rather than per cert- it's allowed here to allow cert
 	// definitions to use a servicemanager of 'command' to allow freeform
 	// invocations.
-	ServiceManager string `json:"svcmgr" yaml:"svcmgr"`
+	ServiceManagerName string `json:"svcmgr" yaml:"svcmgr"`
+
+	serviceManager svcmgr.Manager
 
 	// The service is the service that uses this certificate. If
 	// this field is not empty, the action below will be applied
@@ -65,16 +68,19 @@ type Spec struct {
 }
 
 func (spec *Spec) String() string {
-	name := displayName(spec.Request.Name())
-	if name == "" {
-		name = spec.Service
+	extra := displayName(spec.Request.Name())
+	if extra == "" {
+		extra = spec.Service
 	}
 
-	if name == "" {
-		name = spec.Cert.Path
+	if extra == "" {
+		extra = spec.Cert.Path
+	}
+	if extra != "" {
+		return fmt.Sprintf("spec: %s: %s", spec.Cert.Path, extra)
 	}
 
-	return name
+	return fmt.Sprintf("spec: %s", spec.Cert.Path)
 }
 
 // Identity creates a transport package identity for the certificate.
@@ -126,7 +132,7 @@ func (spec *Spec) Identity() (*core.Identity, error) {
 	return ident, nil
 }
 
-func newSpecFromPath(path string) (*Spec, error) {
+func newSpecFromPath(path string, defaultServiceManager string) (*Spec, error) {
 	in, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -150,8 +156,8 @@ func newSpecFromPath(path string) (*Spec, error) {
 }
 
 // Load reads a spec from a JSON configuration file.
-func Load(path, remote string, before time.Duration) (*Spec, error) {
-	spec, err := newSpecFromPath(path)
+func Load(path, remote string, before time.Duration, defaultServiceManager string, strict bool) (*Spec, error) {
+	spec, err := newSpecFromPath(path, defaultServiceManager)
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +204,23 @@ func Load(path, remote string, before time.Duration) (*Spec, error) {
 		err = nil
 	}
 
+	manager, _ := svcmgr.New("dummy", "", "")
+	if spec.Action != "" && spec.Action != "nop" {
+		manager, err = svcmgr.New(spec.ServiceManagerName, spec.Action, spec.Service)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// If action is undefined and svcmgr isn't dummy, we will throw a warning due to likely undefined cert renewal behavior
+	// We will refuse to even store/keep track of the cert if we're in strict mode
+	if (spec.Action == "" || spec.Action == "nop") && (spec.ServiceManagerName != "" && spec.ServiceManagerName != "dummy") {
+		log.Warningf("manager: No action defined for a non-dummy svcmgr in certificate spec. This can lead to undefined certificate renewal behavior.")
+		if strict {
+			return nil, nil
+		}
+	}
+	spec.serviceManager = manager
 	return spec, err
 }
 
@@ -416,4 +439,122 @@ func (spec *Spec) Backoff() time.Duration {
 // ResetBackoff resets the spec's backoff.
 func (spec *Spec) ResetBackoff() {
 	spec.tr.Backoff.Reset()
+}
+
+// EnforcePKI Process a spec updating content on disk, taking action as needed.
+// Returns (TTL for PKI, error).  If an error occurs, the ttl is at best
+// a hint to the invoker as to when the next refresh is required- that said
+// the invoker should back off and try a refresh.
+func (spec *Spec) EnforcePKI(enableActions bool) (time.Duration, error) {
+	err := spec.CheckDiskPKI()
+	if err != nil {
+		log.Debugf("manager: %s, checkdiskpki: %s.  Forcing refresh.", spec, err.Error())
+		spec.ResetLifespan()
+	}
+
+	if err = spec.CheckCA(); err != nil {
+		log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", spec)
+	}
+
+	lifespan := time.Duration(0)
+	if !spec.Ready() {
+		log.Debugf("manager: %s isn't ready", spec)
+	} else {
+		log.Debugf("manager: %s checking lifespan", spec)
+		lifespan = spec.Lifespan()
+	}
+	log.Debugf("manager: %s has lifespan %s", spec, lifespan)
+	if lifespan <= 0 {
+		err := spec.RenewPKI()
+		if err != nil {
+			log.Errorf("manager: failed to renew %s; requeuing cert", spec)
+			return 0, err
+		}
+
+		log.Debug("taking action due to key refresh")
+		if enableActions {
+			err = spec.TakeAction("key")
+		} else {
+			log.Infof("skipping actions for %s due to calling mode", spec)
+		}
+
+		// Even though there was an error managing the service
+		// associated with the certificate, the certificate has been
+		// renewed.
+		if err != nil {
+			metrics.ActionFailure.WithLabelValues(spec.Path, "key").Inc()
+			log.Errorf("manager: %s", err)
+		}
+
+		log.Info("manager: certificate successfully processed")
+	}
+	metrics.Expires.WithLabelValues(spec.Path, "cert").Set(float64(spec.CertExpireTime().Unix()))
+
+	return spec.Lifespan(), nil
+}
+
+// TakeAction execute the configured svcmgr Action for this spec
+func (spec *Spec) TakeAction(changeType string) error {
+	log.Infof("manager: executing configured action due to change type %s for %s", changeType, spec.Cert.Path)
+	caPath := ""
+	if spec.CA.File != nil {
+		caPath = spec.CA.File.Path
+	}
+	metrics.ActionCount.WithLabelValues(spec.Cert.Path, changeType).Inc()
+	return spec.serviceManager.TakeAction(changeType, spec.Path, caPath, spec.Cert.Path, spec.Key.Path)
+}
+
+// The maximum number of attempts before giving up.
+const maxAttempts = 5
+
+// RenewPKI Try to update the on disk PKI content with a fresh CA/cert as needed
+func (spec *Spec) RenewPKI() error {
+	start := time.Now()
+	for attempts := 0; attempts < maxAttempts; attempts++ {
+		log.Infof("manager: processing certificate %s (attempt %d)", spec, attempts+1)
+		err := spec.RefreshKeys()
+		if err != nil {
+			if isAuthError(err) {
+				// Killing the server is really the
+				// only valid option here; it will
+				// force an investigation into why the
+				// auth key is bad.
+				log.Fatalf("invalid auth key for %s", spec)
+			}
+			backoff := spec.Backoff()
+			log.Warningf("manager: failed to renew certificate (err=%s), backing off for %0.0f seconds", err, backoff.Seconds())
+			metrics.FailureCount.WithLabelValues(spec.Path).Inc()
+			time.Sleep(backoff)
+			continue
+		}
+
+		spec.ResetBackoff()
+		return nil
+	}
+	stop := time.Now()
+
+	spec.ResetBackoff()
+	return fmt.Errorf("manager: failed to renew %s in %d attempts (in %0.0f seconds)", spec, maxAttempts, stop.Sub(start).Seconds())
+}
+
+// CheckCA checks the CA on the certificate and restarts the service
+// if needed.
+func (spec *Spec) CheckCA() error {
+	var err error
+	var changed bool
+	if changed, err = spec.CA.Refresh(); err != nil {
+		metrics.ActionFailure.WithLabelValues(spec.Path, "CA").Inc()
+		return err
+	} else if changed {
+		metrics.Expires.WithLabelValues(spec.Path, "ca").Set(float64(spec.CAExpireTime().Unix()))
+		log.Debug("taking action due to CA refresh")
+		err := spec.TakeAction("CA")
+
+		if err != nil {
+			metrics.ActionFailure.WithLabelValues(spec.Path, "CA").Inc()
+			log.Errorf("manager: %s", err)
+		}
+	}
+	metrics.Expires.WithLabelValues(spec.Path, "ca").Set(float64(spec.CAExpireTime().Unix()))
+	return err
 }
