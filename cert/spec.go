@@ -65,6 +65,9 @@ type Spec struct {
 	Path string
 
 	tr *transport.Transport
+
+	// used for tracking when the spec was read
+	loadTime time.Time
 }
 
 func (spec *Spec) String() string {
@@ -77,10 +80,10 @@ func (spec *Spec) String() string {
 		extra = spec.Cert.Path
 	}
 	if extra != "" {
-		return fmt.Sprintf("spec: %s: %s", spec.Cert.Path, extra)
+		return fmt.Sprintf("%s: %s", spec.Cert.Path, extra)
 	}
 
-	return fmt.Sprintf("spec: %s", spec.Cert.Path)
+	return spec.Cert.Path
 }
 
 // Identity creates a transport package identity for the certificate.
@@ -138,9 +141,15 @@ func newSpecFromPath(path string) (*Spec, error) {
 		return nil, err
 	}
 
+	specStat, err := os.Stat(path)
+	if err != nil {
+		// Hit the race; we read the file but someone wiped it.
+		return nil, err
+	}
 	var spec = &Spec{
-		Request: csr.New(),
-		Path:    path,
+		Request:  csr.New(),
+		Path:     path,
+		loadTime: specStat.ModTime(),
 	}
 
 	switch filepath.Ext(path) {
@@ -262,34 +271,24 @@ func (spec *Spec) Lifespan() time.Duration {
 		panic("cert: cannot check certificate's lifespan because spec has an invalid transport")
 	}
 
-	// This bit of code is necessary to confirm that the cert/key are older than the spec definition.
-	if spec.IsChangedOnDisk(spec.Key.Path) || spec.IsChangedOnDisk(spec.Cert.Path) {
-		// This is necessary to essentially force cfssl to regenerate since it's not spec aware.
-		log.Infof("refreshing due to spec %s having a newer mtime than key or cert", spec.Path)
-		spec.ForceRenewal()
-		return 0
-	}
 	return spec.tr.Lifespan()
 }
 
-// IsChangedOnDisk method to report if the given path is older than the spec
-func (spec *Spec) IsChangedOnDisk(path string) bool {
+// HasChangedOnDisk returns (removed, changed, err) to indicate if the spec has changed
+func (spec *Spec) HasChangedOnDisk() (bool, bool, error) {
 	specStat, err := os.Stat(spec.Path)
 	if err != nil {
-		// The assertion here is that the spec actually
-		// exists. If it doesn't, something is wrong with the
-		// world.
-		log.Warning("cert: IsChangedOnDisk: Spec file does not exist")
-		return true
-	}
-	st, err := os.Stat(path)
-	if err != nil {
 		if os.IsNotExist(err) {
-			log.Errorf("cert isChangedOnDisk: while checking path %s, got path error %s", path, err)
+			log.Debugf("spec %s was removed from on disk", spec)
+			return true, false, nil
 		}
-		return true
+		return false, false, err
+	} else if specStat.ModTime().After(spec.loadTime) {
+		log.Debugf("spec %s has changed on disk", spec)
+		return false, true, nil
 	}
-	return specStat.ModTime().After(st.ModTime())
+	log.Debugf("spec %s hasn't changed on disk", spec)
+	return false, false, nil
 }
 
 // CheckDiskPKI checks the PKI information on disk against cert spec and alerts upon differences
@@ -410,6 +409,7 @@ func (spec *Spec) ForceRenewal() {
 	if cert != nil {
 		spec.tr.Provider.Certificate().NotAfter = time.Time{}
 	}
+
 }
 
 // Certificate returns the x509.Certificate associated with the spec

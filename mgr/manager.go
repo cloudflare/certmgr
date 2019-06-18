@@ -115,6 +115,17 @@ var validExtensions = map[string]bool{
 	".yml":  true,
 }
 
+func (m *Manager) loadSpec(path string, strict bool) (*cert.Spec, error) {
+	log.Infof("manager: loading spec from %s", path)
+	spec, err := cert.Load(path, m.DefaultRemote, m.Before, m.ServiceManager, strict)
+	if err == nil {
+		log.Debugf("manager: successfully loaded spec from %s", path)
+	} else {
+		log.Errorf("managed: failed loading spec from %s: %s", path, err)
+	}
+	return spec, err
+}
+
 // Load reads the certificate specs from the spec directory.
 func (m *Manager) Load(forced, strict bool) error {
 	if (m.Certs != nil || len(m.Certs) > 0) && !forced {
@@ -144,14 +155,14 @@ func (m *Manager) Load(forced, strict bool) error {
 			return nil
 		}
 
-		log.Info("manager: loading spec from ", path)
-		cert, err := cert.Load(path, m.DefaultRemote, m.Before, m.ServiceManager, strict)
+		spec, err := m.loadSpec(path, strict)
 		if err != nil {
+			log.Errorf("stopping directory scan due to %s", err)
 			return err
 		}
 
-		m.Certs = append(m.Certs, cert)
-		metrics.SpecWatchCount.WithLabelValues(cert.Path, cert.ServiceManagerName, cert.Action, cert.CA.Label).Inc()
+		m.Certs = append(m.Certs, spec)
+		metrics.SpecWatchCount.WithLabelValues(spec.Path, spec.ServiceManagerName, spec.Action, spec.CA.Label).Inc()
 		return nil
 	}
 
@@ -196,13 +207,24 @@ func (m *Manager) Server(strict bool) {
 	for {
 		<-time.After(m.Interval)
 
-		for _, spec := range m.Certs {
-			if spec.IsChangedOnDisk(spec.Key.Path) || spec.IsChangedOnDisk(spec.Cert.Path) {
-				err := m.Load(true, strict)
+		for idx, spec := range m.Certs {
+			removed, changed, err := spec.HasChangedOnDisk()
+			if err != nil {
+				log.Errorf("failed checking spec on disk status for %s: %s", spec, err)
+				continue
+			}
+			if removed {
+				log.Warningf("spec %s was removed, certmgr requires a restart", spec)
+				continue
+			}
+			if changed {
+				newSpec, err := m.loadSpec(spec.Path, strict)
 				if err != nil {
-					metrics.ActionFailure.WithLabelValues(spec.Path, "load").Inc()
-					log.Debugf("manager: load: %s", err.Error())
+					log.Errorf("failed to reload spec %s due to %s. Continuing to use old spec.", spec, err)
+					continue
 				}
+				log.Infof("reloaded spec %s due to detected changes", spec)
+				m.Certs[idx] = newSpec
 			}
 		}
 
