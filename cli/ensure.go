@@ -49,11 +49,11 @@ func ensure(cmd *cobra.Command, args []string) {
 	for _, cert := range mgr.Certs {
 		for attempt := ensureTolerance; attempt > 0; attempt-- {
 			if forceRegen {
-				cert.ResetLifespan()
+				cert.ForceRenewal()
 			}
 			_, err = cert.EnforcePKI(enableActions)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed processing spec %s due to %s; %d remaining attempts", cert.Spec.Path, err, attempt)
+				fmt.Fprintf(os.Stderr, "Failed processing spec %s due to %s; %d remaining attempts", cert.Path, err, attempt)
 			} else {
 				break
 			}

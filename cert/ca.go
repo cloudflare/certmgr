@@ -8,10 +8,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/cloudflare/cfssl/api/client"
@@ -34,15 +32,15 @@ type CA struct {
 	pem         []byte
 }
 
-// GetPEM is for testing only!
+// getPEM is for testing only!
 // Getter for CA cert PEM
-func (ca *CA) GetPEM() []byte {
+func (ca *CA) getPEM() []byte {
 	return ca.pem
 }
 
-// SetPEM is for testing only!
+// setPEM is for testing only!
 // Setter for CA cert PEM
-func (ca *CA) SetPEM(pem []byte) {
+func (ca *CA) setPEM(pem []byte) {
 	ca.pem = pem
 }
 
@@ -88,24 +86,17 @@ func (ca *CA) writeCert(cert []byte) error {
 		return nil
 	}
 
-	ca.File.Path = filepath.Clean(ca.File.Path)
-	err := ca.File.Parse(fmt.Sprintf("CA:%s/%s/%s", ca.Remote, ca.Label, ca.Profile))
-	if err != nil {
-		return err
-	}
-
 	// add a trailing newline for humans
 	if !bytes.HasSuffix(cert, []byte{'\n'}) {
 		cert = append(cert, '\n')
 	}
-	err = ioutil.WriteFile(ca.File.Path, cert, 0644)
+	err := ioutil.WriteFile(ca.File.Path, cert, 0644)
 	if err != nil {
 		return err
 	}
 	log.Infof("cert: wrote CA certificate: %s", ca.File.Path)
 
-	err = ca.File.Set()
-	return err
+	return ca.File.setPermissions()
 }
 
 // Load reads the CA certificate from the configured remote, and if a

@@ -1,4 +1,4 @@
-package mgr
+package cert
 
 import (
 	"encoding/json"

@@ -60,7 +60,7 @@ func root(cmd *cobra.Command, args []string) {
 	// so changes in certs count are properly reflected.
 	certs := []*cert.Spec{}
 	for _, x := range mgr.Certs {
-		certs = append(certs, x.Spec)
+		certs = append(certs, x)
 	}
 	metrics.Start(
 		viper.GetString("metrics_address"),

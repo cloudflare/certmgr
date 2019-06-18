@@ -9,7 +9,6 @@ import (
 
 	"github.com/cloudflare/certmgr/cert"
 	"github.com/cloudflare/certmgr/metrics"
-	"github.com/cloudflare/certmgr/svcmgr"
 	"github.com/cloudflare/cfssl/log"
 	yaml "gopkg.in/yaml.v2"
 )
@@ -21,135 +20,6 @@ const DefaultInterval = time.Hour
 // DefaultBefore is used if no duration is provided for a
 // Manager. This defaults to 72 hours.
 const DefaultBefore = time.Hour * 72
-
-// CertServiceManager this exists purely so we can bind custom svcmgr's per cert
-// This is primarily used for 'command' svcmgr's that don't follow the norm.
-type CertServiceManager struct {
-	*cert.Spec
-	serviceManager svcmgr.Manager
-}
-
-func (csm *CertServiceManager) String() string {
-	return fmt.Sprintf("spec: %s", csm.Spec.Path)
-}
-
-// EnforcePKI Process a spec updating content on disk, taking action as needed.
-// Returns (TTL for PKI, error).  If an error occurs, the ttl is at best
-// a hint to the invoker as to when the next refresh is required- that said
-// the invoker should back off and try a refresh.
-func (csm *CertServiceManager) EnforcePKI(enableActions bool) (time.Duration, error) {
-	err := csm.Spec.CheckDiskPKI()
-	if err != nil {
-		log.Debugf("manager: %s, checkdiskpki: %s.  Forcing refresh.", csm, err.Error())
-		csm.ResetLifespan()
-	}
-
-	if err = csm.CheckCA(); err != nil {
-		log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", csm)
-	}
-
-	lifespan := time.Duration(0)
-	if !csm.Ready() {
-		log.Debugf("manager: %s isn't ready", csm)
-	} else {
-		log.Debugf("manager: %s checking lifespan", csm)
-		lifespan = csm.Lifespan()
-	}
-	log.Debugf("manager: %s has lifespan %s", csm, lifespan)
-	if lifespan <= 0 {
-		err := csm.RenewPKI()
-		if err != nil {
-			log.Errorf("manager: failed to renew %s; requeuing cert", csm)
-			return 0, err
-		}
-
-		log.Debug("taking action due to key refresh")
-		if enableActions {
-			err = csm.TakeAction("key")
-		} else {
-			log.Infof("skipping actions for %s due to calling mode", csm)
-		}
-
-		// Even though there was an error managing the service
-		// associated with the certificate, the certificate has been
-		// renewed.
-		if err != nil {
-			metrics.ActionFailure.WithLabelValues(csm.Spec.Path, "key").Inc()
-			log.Errorf("manager: %s", err)
-		}
-
-		log.Info("manager: certificate successfully processed")
-	}
-	metrics.Expires.WithLabelValues(csm.Spec.Path, "cert").Set(float64(csm.CertExpireTime().Unix()))
-
-	return csm.Lifespan(), nil
-}
-
-// TakeAction execute the configured svcmgr Action for this spec
-func (csm *CertServiceManager) TakeAction(changeType string) error {
-	log.Infof("manager: executing configured action due to change type %s for %s", changeType, csm.Cert.Path)
-	caPath := ""
-	if csm.CA.File != nil {
-		caPath = csm.CA.File.Path
-	}
-	metrics.ActionCount.WithLabelValues(csm.Cert.Path, changeType).Inc()
-	return csm.serviceManager.TakeAction(changeType, csm.Path, caPath, csm.Cert.Path, csm.Key.Path)
-}
-
-// The maximum number of attempts before giving up.
-const maxAttempts = 5
-
-// RenewPKI Try to update the on disk PKI content with a fresh CA/cert as needed
-func (csm *CertServiceManager) RenewPKI() error {
-	start := time.Now()
-	for attempts := 0; attempts < maxAttempts; attempts++ {
-		log.Infof("manager: processing certificate %s (attempt %d)", csm, attempts+1)
-		err := csm.RefreshKeys()
-		if err != nil {
-			if isAuthError(err) {
-				// Killing the server is really the
-				// only valid option here; it will
-				// force an investigation into why the
-				// auth key is bad.
-				log.Fatalf("invalid auth key for %s", csm)
-			}
-			backoff := csm.Backoff()
-			log.Warningf("manager: failed to renew certificate (err=%s), backing off for %0.0f seconds", err, backoff.Seconds())
-			metrics.FailureCount.WithLabelValues(csm.Spec.Path).Inc()
-			time.Sleep(backoff)
-			continue
-		}
-
-		csm.ResetBackoff()
-		return nil
-	}
-	stop := time.Now()
-
-	csm.ResetBackoff()
-	return fmt.Errorf("manager: failed to renew %s in %d attempts (in %0.0f seconds)", csm, maxAttempts, stop.Sub(start).Seconds())
-}
-
-// CheckCA checks the CA on the certificate and restarts the service
-// if needed.
-func (csm *CertServiceManager) CheckCA() error {
-	var err error
-	var changed bool
-	if changed, err = csm.CA.Refresh(); err != nil {
-		metrics.ActionFailure.WithLabelValues(csm.Spec.Path, "CA").Inc()
-		return err
-	} else if changed {
-		metrics.Expires.WithLabelValues(csm.Spec.Path, "ca").Set(float64(csm.CAExpireTime().Unix()))
-		log.Debug("taking action due to CA refresh")
-		err := csm.TakeAction("CA")
-
-		if err != nil {
-			metrics.ActionFailure.WithLabelValues(csm.Spec.Path, "CA").Inc()
-			log.Errorf("manager: %s", err)
-		}
-	}
-	metrics.Expires.WithLabelValues(csm.Spec.Path, "ca").Set(float64(csm.CAExpireTime().Unix()))
-	return err
-}
 
 // The Manager structure contains the certificates to be managed. A
 // manager needs to be constructed with one of the New functions, and
@@ -174,7 +44,7 @@ type Manager struct {
 	Interval time.Duration `yaml:"interval"`
 
 	// Certs contains the list of certificates to manage.
-	Certs []*CertServiceManager `yaml:",omitempty"`
+	Certs []*cert.Spec `yaml:",omitempty"`
 }
 
 // UnmarshallYAML update a Manager instance via deserializing the given yaml
@@ -256,8 +126,6 @@ func (m *Manager) Load(forced, strict bool) error {
 		m.Certs = nil
 	}
 
-	dummyMgr, _ := svcmgr.New("dummy", "", "")
-
 	log.Info("manager: loading certificates from ", m.Dir)
 	walker := func(path string, info os.FileInfo, err error) error {
 		if info == nil {
@@ -277,32 +145,13 @@ func (m *Manager) Load(forced, strict bool) error {
 		}
 
 		log.Info("manager: loading spec from ", path)
-		cert, err := cert.Load(path, m.DefaultRemote, m.Before)
+		cert, err := cert.Load(path, m.DefaultRemote, m.Before, m.ServiceManager, strict)
 		if err != nil {
 			return err
 		}
 
-		s := cert.ServiceManager
-		if s == "" {
-			s = m.ServiceManager
-		}
-		manager := dummyMgr
-		if cert.Action != "" && cert.Action != "nop" {
-			manager, err = svcmgr.New(s, cert.Action, cert.Service)
-			if err != nil {
-				return err
-			}
-		}
-		// If action is undefined and svcmgr isn't dummy, we will throw a warning due to likely undefined cert renewal behavior
-		// We will refuse to even store/keep track of the cert if we're in strict mode
-		if (cert.Action == "" || cert.Action == "nop") && s != "dummy" {
-			log.Warningf("manager: No action defined for a non-dummy svcmgr in certificate spec. This can lead to undefined certificate renewal behavior.")
-			if strict {
-				return nil
-			}
-		}
-		m.Certs = append(m.Certs, &CertServiceManager{cert, manager})
-		metrics.SpecWatchCount.WithLabelValues(cert.Path, s, cert.Action, cert.CA.Label).Inc()
+		m.Certs = append(m.Certs, cert)
+		metrics.SpecWatchCount.WithLabelValues(cert.Path, cert.ServiceManagerName, cert.Action, cert.CA.Label).Inc()
 		return nil
 	}
 
