@@ -84,7 +84,7 @@ func (spec *Spec) String() string {
 }
 
 // Identity creates a transport package identity for the certificate.
-func (spec *Spec) Identity() (*core.Identity, error) {
+func (spec *Spec) identity() (*core.Identity, error) {
 	ident := &core.Identity{
 		Request: spec.Request,
 		Roots: []*core.Root{
@@ -175,7 +175,7 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 		return nil, err
 	}
 
-	identity, err := spec.Identity()
+	identity, err := spec.identity()
 	if err != nil {
 		return nil, err
 	}
