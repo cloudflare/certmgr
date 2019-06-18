@@ -170,19 +170,6 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 		return nil, errors.New("cert: no remote specified in authority (either in the spec or in the certmgr config)")
 	}
 
-	err = spec.Key.Parse("private_key")
-	if err != nil {
-		return nil, err
-	}
-
-	err = spec.Cert.Parse("certificate")
-	if err != nil {
-		return nil, err
-	}
-
-	spec.Key.Path = filepath.Clean(spec.Key.Path)
-	spec.Cert.Path = filepath.Clean(spec.Cert.Path)
-
 	err = spec.CA.Load()
 	if err != nil {
 		return nil, err

@@ -8,10 +8,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/cloudflare/cfssl/api/client"
@@ -88,17 +86,11 @@ func (ca *CA) writeCert(cert []byte) error {
 		return nil
 	}
 
-	ca.File.Path = filepath.Clean(ca.File.Path)
-	err := ca.File.Parse(fmt.Sprintf("CA:%s/%s/%s", ca.Remote, ca.Label, ca.Profile))
-	if err != nil {
-		return err
-	}
-
 	// add a trailing newline for humans
 	if !bytes.HasSuffix(cert, []byte{'\n'}) {
 		cert = append(cert, '\n')
 	}
-	err = ioutil.WriteFile(ca.File.Path, cert, 0644)
+	err := ioutil.WriteFile(ca.File.Path, cert, 0644)
 	if err != nil {
 		return err
 	}
