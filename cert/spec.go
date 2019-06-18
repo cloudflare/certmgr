@@ -262,7 +262,7 @@ func (spec *Spec) Lifespan() time.Duration {
 	if spec.IsChangedOnDisk(spec.Key.Path) || spec.IsChangedOnDisk(spec.Cert.Path) {
 		// This is necessary to essentially force cfssl to regenerate since it's not spec aware.
 		log.Infof("refreshing due to spec %s having a newer mtime than key or cert", spec.Path)
-		spec.ResetLifespan()
+		spec.ForceRenewal()
 		return 0
 	}
 	return spec.tr.Lifespan()
@@ -400,8 +400,8 @@ func (spec *Spec) CAExpireTime() time.Time {
 	return parsedCert.NotAfter
 }
 
-// ResetLifespan Reset the lifespan to force cfssl to regenerate
-func (spec *Spec) ResetLifespan() {
+// ForceRenewal Reset the lifespan to force cfssl to regenerate
+func (spec *Spec) ForceRenewal() {
 	cert := spec.tr.Provider.Certificate()
 	if cert != nil {
 		spec.tr.Provider.Certificate().NotAfter = time.Time{}
@@ -436,7 +436,7 @@ func (spec *Spec) EnforcePKI(enableActions bool) (time.Duration, error) {
 	err := spec.CheckDiskPKI()
 	if err != nil {
 		log.Debugf("manager: %s, checkdiskpki: %s.  Forcing refresh.", spec, err.Error())
-		spec.ResetLifespan()
+		spec.ForceRenewal()
 	}
 
 	if err = spec.CheckCA(); err != nil {

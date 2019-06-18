@@ -49,7 +49,7 @@ func ensure(cmd *cobra.Command, args []string) {
 	for _, cert := range mgr.Certs {
 		for attempt := ensureTolerance; attempt > 0; attempt-- {
 			if forceRegen {
-				cert.ResetLifespan()
+				cert.ForceRenewal()
 			}
 			_, err = cert.EnforcePKI(enableActions)
 			if err != nil {
