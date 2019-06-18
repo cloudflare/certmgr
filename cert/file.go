@@ -123,7 +123,7 @@ func (f *File) parse() (err error) {
 }
 
 // Set ensures the file has the right owner/group and mode.
-func (f *File) Set() error {
+func (f *File) setPermissions() error {
 	st, err := os.Stat(f.Path)
 	if err != nil {
 		return err
@@ -144,8 +144,8 @@ func (f *File) Set() error {
 	return nil
 }
 
-// Remove deletes the file specified by the Path field.
-func (f *File) Remove() error {
+// Unlink deletes the file specified by the Path field.
+func (f *File) Unlink() error {
 	log.Debugf("removing %s", f.Path)
 	err := os.Remove(f.Path)
 	if os.IsNotExist(err) {

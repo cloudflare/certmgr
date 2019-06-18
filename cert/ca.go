@@ -96,8 +96,7 @@ func (ca *CA) writeCert(cert []byte) error {
 	}
 	log.Infof("cert: wrote CA certificate: %s", ca.File.Path)
 
-	err = ca.File.Set()
-	return err
+	return ca.File.setPermissions()
 }
 
 // Load reads the CA certificate from the configured remote, and if a

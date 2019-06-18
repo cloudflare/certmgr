@@ -26,14 +26,14 @@ func clean(cmd *cobra.Command, args []string) {
 
 	var failed bool
 	for _, cert := range mgr.Certs {
-		err := cert.Key.Remove()
+		err := cert.Key.Unlink()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "certmgr: failed to remove the private key for %s (%s)\n",
 				cert, err)
 			failed = true
 		}
 
-		err = cert.Cert.Remove()
+		err = cert.Cert.Unlink()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "certmgr: failed to remove the certificate for %s (%s)\n",
 				cert, err)

@@ -229,12 +229,12 @@ func (spec *Spec) RefreshKeys() error {
 		return err
 	}
 
-	err = spec.Key.Set()
+	err = spec.Key.setPermissions()
 	if err != nil {
 		return err
 	}
 
-	err = spec.Cert.Set()
+	err = spec.Cert.setPermissions()
 	if err != nil {
 		return err
 	}
