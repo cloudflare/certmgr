@@ -132,7 +132,7 @@ func (spec *Spec) identity() (*core.Identity, error) {
 	return ident, nil
 }
 
-func newSpecFromPath(path string, defaultServiceManager string) (*Spec, error) {
+func newSpecFromPath(path string) (*Spec, error) {
 	in, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -157,7 +157,7 @@ func newSpecFromPath(path string, defaultServiceManager string) (*Spec, error) {
 
 // Load reads a spec from a JSON configuration file.
 func Load(path, remote string, before time.Duration, defaultServiceManager string, strict bool) (*Spec, error) {
-	spec, err := newSpecFromPath(path, defaultServiceManager)
+	spec, err := newSpecFromPath(path)
 	if err != nil {
 		return nil, err
 	}
@@ -191,6 +191,10 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 		err = nil
 	}
 
+	if spec.ServiceManagerName == "" {
+		spec.ServiceManagerName = defaultServiceManager
+	}
+
 	manager, _ := svcmgr.New("dummy", "", "")
 	if spec.Action != "" && spec.Action != "nop" {
 		manager, err = svcmgr.New(spec.ServiceManagerName, spec.Action, spec.Service)
@@ -204,7 +208,7 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 	if (spec.Action == "" || spec.Action == "nop") && (spec.ServiceManagerName != "" && spec.ServiceManagerName != "dummy") {
 		log.Warningf("manager: No action defined for a non-dummy svcmgr in certificate spec. This can lead to undefined certificate renewal behavior.")
 		if strict {
-			return nil, nil
+			return nil, fmt.Errorf("failed to load spec %s due to strict mode and non dummy service manager", path)
 		}
 	}
 	spec.serviceManager = manager
@@ -428,7 +432,7 @@ func (spec *Spec) ResetBackoff() {
 	spec.tr.Backoff.Reset()
 }
 
-// EnforcePKI Process a spec updating content on disk, taking action as needed.
+// EnforcePKI processes a spec, updating content on disk, taking action as needed.
 // Returns (TTL for PKI, error).  If an error occurs, the ttl is at best
 // a hint to the invoker as to when the next refresh is required- that said
 // the invoker should back off and try a refresh.

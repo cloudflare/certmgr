@@ -36,7 +36,7 @@ func (f *File) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return f.parse()
 }
 
-// UnmarshalJSON implement yaml unmarshalling logic
+// UnmarshalJSON implement json unmarshalling logic
 func (f *File) UnmarshalJSON(data []byte) error {
 	type alias File
 	if err := json.Unmarshal(data, (*alias)(f)); err != nil {
