@@ -224,11 +224,11 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 	return spec, err
 }
 
-// RefreshKeys will make sure the key pair in the Spec has loaded keys
+// refreshKeys will make sure the key pair in the Spec has loaded keys
 // and has a valid certificate. It will handle any persistence, check
 // that the certificate is valid (i.e. that its expiry date is within
 // the Before date), and handle certificate reissuance as needed.
-func (spec *Spec) RefreshKeys() error {
+func (spec *Spec) refreshKeys() error {
 	if spec.tr == nil {
 		panic("cert: cannot refresh keys because spec has an invalid transport")
 	}
@@ -255,9 +255,9 @@ func (spec *Spec) RefreshKeys() error {
 	return nil
 }
 
-// Ready returns true if the key pair specified by the Spec exists; it
+// ready returns true if the key pair specified by the Spec exists; it
 // doesn't check whether it needs to be renewed.
-func (spec *Spec) Ready() bool {
+func (spec *Spec) ready() bool {
 	if spec.tr == nil {
 		panic("cert: cannot check readiness because spec has an invalid transport")
 	}
@@ -291,10 +291,10 @@ func (spec *Spec) HasChangedOnDisk() (bool, bool, error) {
 	return false, false, nil
 }
 
-// CheckDiskPKI checks the PKI information on disk against cert spec and alerts upon differences
+// checkDiskPKI checks the PKI information on disk against cert spec and alerts upon differences
 // Specifically, it checks that private key on disk matches spec algorithm & keysize,
 // and certificate on disk matches CSR spec info
-func (spec *Spec) CheckDiskPKI() error {
+func (spec *Spec) checkDiskPKI() error {
 	certPath := spec.Cert.Path
 	keyPath := spec.Key.Path
 	csrRequest := spec.Request
@@ -443,18 +443,18 @@ func (spec *Spec) ResetBackoff() {
 // a hint to the invoker as to when the next refresh is required- that said
 // the invoker should back off and try a refresh.
 func (spec *Spec) EnforcePKI(enableActions bool) (time.Duration, error) {
-	err := spec.CheckDiskPKI()
+	err := spec.checkDiskPKI()
 	if err != nil {
 		log.Debugf("manager: %s, checkdiskpki: %s.  Forcing refresh.", spec, err.Error())
 		spec.ForceRenewal()
 	}
 
-	if err = spec.CheckCA(); err != nil {
+	if err = spec.checkCA(); err != nil {
 		log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", spec)
 	}
 
 	lifespan := time.Duration(0)
-	if !spec.Ready() {
+	if !spec.ready() {
 		log.Debugf("manager: %s isn't ready", spec)
 	} else {
 		log.Debugf("manager: %s checking lifespan", spec)
@@ -462,7 +462,7 @@ func (spec *Spec) EnforcePKI(enableActions bool) (time.Duration, error) {
 	}
 	log.Debugf("manager: %s has lifespan %s", spec, lifespan)
 	if lifespan <= 0 {
-		err := spec.RenewPKI()
+		err := spec.renewPKI()
 		if err != nil {
 			log.Errorf("manager: failed to renew %s; requeuing cert", spec)
 			return 0, err
@@ -504,12 +504,12 @@ func (spec *Spec) TakeAction(changeType string) error {
 // The maximum number of attempts before giving up.
 const maxAttempts = 5
 
-// RenewPKI Try to update the on disk PKI content with a fresh CA/cert as needed
-func (spec *Spec) RenewPKI() error {
+// renewPKI Try to update the on disk PKI content with a fresh CA/cert as needed
+func (spec *Spec) renewPKI() error {
 	start := time.Now()
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		log.Infof("manager: processing certificate %s (attempt %d)", spec, attempts+1)
-		err := spec.RefreshKeys()
+		err := spec.refreshKeys()
 		if err != nil {
 			if isAuthError(err) {
 				// Killing the server is really the
@@ -534,9 +534,9 @@ func (spec *Spec) RenewPKI() error {
 	return fmt.Errorf("manager: failed to renew %s in %d attempts (in %0.0f seconds)", spec, maxAttempts, stop.Sub(start).Seconds())
 }
 
-// CheckCA checks the CA on the certificate and restarts the service
+// checkCA checks the CA on the certificate and restarts the service
 // if needed.
-func (spec *Spec) CheckCA() error {
+func (spec *Spec) checkCA() error {
 	var err error
 	var changed bool
 	if changed, err = spec.CA.Refresh(); err != nil {
