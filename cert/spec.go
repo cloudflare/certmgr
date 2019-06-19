@@ -356,6 +356,12 @@ func (spec *Spec) CheckDiskPKI() error {
 	if err != nil {
 		return err
 	}
+	// confirm that pkix is the same.  This catches things like OU being changed; these are slices
+	// of slices and there isn't a usable equality check, thus the .String() usage.
+	if csrRequest.Name().String() != cert.Subject.String() {
+		return fmt.Errorf("subject has changed: was %s, now is %s", cert.Subject, csrRequest.Name())
+	}
+
 	if !hostnamesEquals(csrRequest.Hosts, cert.DNSNames) {
 		metrics.HostnameMismatchCount.WithLabelValues(spec.Path).Set(1)
 		return errors.New("manager: DNS names in cert on disk don't match with hostnames in spec")
