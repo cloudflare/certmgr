@@ -294,16 +294,10 @@ func (spec *Spec) HasChangedOnDisk() (bool, bool, error) {
 // checkDiskPKI checks the PKI information on disk against cert spec and alerts upon differences
 // Specifically, it checks that private key on disk matches spec algorithm & keysize,
 // and certificate on disk matches CSR spec info
-func (spec *Spec) checkDiskPKI() error {
-	certPath := spec.Cert.Path
-	keyPath := spec.Key.Path
+func (spec *Spec) checkDiskPKI(certData []byte, keyData []byte) error {
 	csrRequest := spec.Request
 
 	// Read private key algorithm and keysize from disk, determine if RSA or ECDSA
-	keyData, err := ioutil.ReadFile(keyPath)
-	if err != nil {
-		return err
-	}
 	pemKey, _ := pem.Decode(keyData)
 	if pemKey == nil {
 		return errors.New("Unable to pem decode private key on disk")
@@ -344,10 +338,6 @@ func (spec *Spec) checkDiskPKI() error {
 	metrics.KeysizeMismatchCount.WithLabelValues(spec.Path).Set(0)
 
 	// Check that certificate hostnames match spec hostnames
-	certData, err := ioutil.ReadFile(certPath)
-	if err != nil {
-		return err
-	}
 	p, _ := pem.Decode(certData)
 	if p == nil {
 		return errors.New("Unable to pem decode certificate on disk")
@@ -443,9 +433,22 @@ func (spec *Spec) ResetBackoff() {
 // a hint to the invoker as to when the next refresh is required- that said
 // the invoker should back off and try a refresh.
 func (spec *Spec) EnforcePKI(enableActions bool) (time.Duration, error) {
-	err := spec.checkDiskPKI()
+	var certData []byte
+	var keyData []byte
+	var err error
+	certData, err = spec.Cert.ReadFile()
 	if err != nil {
-		log.Debugf("manager: %s, checkdiskpki: %s.  Forcing refresh.", spec, err.Error())
+		log.Debugf("spec %s: cert failed to be read: %s", spec, err)
+	} else {
+		keyData, err = spec.Key.ReadFile()
+		if err != nil {
+			log.Debugf("spec %s: key failed to be read: %s", spec, err)
+		} else {
+			err = spec.checkDiskPKI(certData, keyData)
+		}
+	}
+	if err != nil {
+		log.Infof("spec %s: forcing refresh due to %s", spec, err)
 		spec.ForceRenewal()
 	}
 
