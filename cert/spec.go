@@ -544,13 +544,18 @@ func (spec *Spec) checkCA() error {
 		return err
 	} else if changed {
 		metrics.Expires.WithLabelValues(spec.Path, "ca").Set(float64(spec.CAExpireTime().Unix()))
-		log.Debug("taking action due to CA refresh")
-		err := spec.TakeAction("CA")
-
-		if err != nil {
-			metrics.ActionFailure.WithLabelValues(spec.Path, "CA").Inc()
-			log.Errorf("manager: %s", err)
+		// if the spec doesn't write a CA, the consumer can't care about it changing- thus no need for an action to fire.
+		if spec.CA.File != nil {
+			log.Debug("taking action due to CA refresh")
+			err := spec.TakeAction("CA")
+			if err != nil {
+				metrics.ActionFailure.WithLabelValues(spec.Path, "CA").Inc()
+				log.Errorf("manager: %s", err)
+			}
+		} else {
+			log.Debug("no action taken due to CA not being written to disk")
 		}
+
 	}
 	metrics.Expires.WithLabelValues(spec.Path, "ca").Set(float64(spec.CAExpireTime().Unix()))
 	return err
