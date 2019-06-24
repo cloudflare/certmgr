@@ -78,49 +78,31 @@ func (ca *CA) getRemoteCert() ([]byte, error) {
 		return nil, err
 	}
 
-	return []byte(strings.TrimSpace(resp.Certificate)), nil
-}
-
-func (ca *CA) writeCert(cert []byte) error {
-	if ca.File == nil {
-		return nil
-	}
-
+	cert := []byte(strings.TrimSpace(resp.Certificate))
 	// add a trailing newline for humans
 	if !bytes.HasSuffix(cert, []byte{'\n'}) {
 		cert = append(cert, '\n')
 	}
-	err := ioutil.WriteFile(ca.File.Path, cert, 0644)
-	if err != nil {
-		return err
-	}
-	log.Infof("cert: wrote CA certificate: %s", ca.File.Path)
-
-	return ca.File.setPermissions()
+	return cert, nil
 }
 
 // Load reads the CA certificate from the configured remote, and if a
 // File section is present in the config, it will attempt to write the
 // CA certificate to disk.
 func (ca *CA) Load() error {
-	cert, err := ca.getRemoteCert()
-	if err != nil {
-		log.Errorf("cert: failed to fetch remote CA: %s", err)
+	if ca.File != nil {
+		pem, err := ca.File.ReadFile()
+		if err != nil && os.IsNotExist(err) {
+			log.Debugf("no CA exists on disk for %s, ignoring", ca.File.Path)
+			err = nil
+		}
+		if err == nil {
+			ca.pem = pem
+			ca.File.setPermissions()
+		}
 		return err
 	}
-
-	if ca.File == nil {
-		// NB: this used to be an info message, but it caused
-		// more confusion than anything else.
-		ca.pem = cert
-		log.Debug("cert: no CA file provided, won't write the CA file to disk")
-		return nil
-	}
-
-	ca.pem, err = ioutil.ReadFile(ca.File.Path)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
+	log.Debug("cert: no CA file provided, won't write the CA file to disk")
 	return nil
 }
 
@@ -131,26 +113,32 @@ func (ca *CA) Refresh() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-
-	isCACertSame, err := CompareCertificates(cert, ca.pem)
-	if err != nil {
-		log.Warning("cert: error comparing CA certificates")
-		return false, err
+	// add a trailing newline for human readability
+	if !bytes.HasSuffix(cert, []byte{'\n'}) {
+		cert = append(cert, '\n')
 	}
 
-	if isCACertSame {
-		if ca.File != nil {
-			log.Infof("cert: existing CA certificate at %s is current", ca.File.Path)
+	updated := len(ca.pem) == 0
+
+	if !updated {
+		same, err := CompareCertificates(cert, ca.pem)
+		if err != nil {
+			log.Warning("cert: error comparing CA certificates: %s", err)
+			return true, err
 		}
+		updated = !same
+	}
+
+	if !updated {
 		return false, nil
 	}
-
-	// If CA cert has changed, write out new CA cert
-	if ca.File != nil {
-		err = ca.writeCert(cert)
+	log.Debugf("ca has changed")
+	if ca.File == nil {
+		ca.pem = cert
+		return true, nil
 	}
-	// If there were no errors, update our internal notion of what the CA is.
-	if err != nil {
+	err = ca.File.WriteFile(cert)
+	if err == nil {
 		ca.pem = cert
 	}
 	return true, err
