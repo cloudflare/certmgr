@@ -3,8 +3,10 @@ package cert
 import (
 	"encoding/json"
 	"errors"
+	"io/ioutil"
 	"os"
 	"os/user"
+	"path"
 	"regexp"
 	"strconv"
 
@@ -141,6 +143,45 @@ func (f *File) setPermissions() error {
 		}
 	}
 
+	return nil
+}
+
+// ReadFile read contents from the file on disk if it exists
+func (f *File) ReadFile() ([]byte, error) {
+	return ioutil.ReadFile(f.Path)
+}
+
+// WriteFile write given content to disk with the appropriate permissions and mode
+func (f *File) WriteFile(data []byte) error {
+	tmpFile, err := ioutil.TempFile(path.Dir(f.Path), path.Base(f.Path))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if tmpFile != nil {
+			os.Remove(tmpFile.Name())
+		}
+	}()
+
+	err = tmpFile.Chown(f.uid, f.gid)
+	if err != nil {
+		return err
+	}
+
+	err = tmpFile.Chmod(f.mode)
+	if err != nil {
+		return err
+	}
+
+	_, err = tmpFile.Write(data)
+	if err != nil {
+		return err
+	}
+	err = os.Rename(tmpFile.Name(), f.Path)
+	if err != nil {
+		return err
+	}
+	tmpFile = nil
 	return nil
 }
 
