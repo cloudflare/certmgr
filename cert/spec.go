@@ -55,7 +55,7 @@ type Spec struct {
 	Key *File `json:"private_key" yaml:"private_key"`
 
 	// Cert contains the file metadata for the certificate.
-	Cert *File `json:"certificate" yaml:"certificate"`
+	Cert *CertificateFile `json:"certificate" yaml:"certificate"`
 
 	// CA specifies the certificate authority that should be used.
 	CA CA `json:"authority" yaml:"authority"`
@@ -68,6 +68,11 @@ type Spec struct {
 
 	// used for tracking when the spec was read
 	loadTime time.Time
+
+	expiry struct {
+		CA   time.Time
+		Cert time.Time
+	}
 }
 
 func (spec *Spec) String() string {
@@ -179,11 +184,6 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 		return nil, errors.New("cert: no remote specified in authority (either in the spec or in the certmgr config)")
 	}
 
-	err = spec.CA.Load()
-	if err != nil {
-		return nil, err
-	}
-
 	identity, err := spec.identity()
 	if err != nil {
 		return nil, err
@@ -255,23 +255,13 @@ func (spec *Spec) refreshKeys() error {
 	return nil
 }
 
-// ready returns true if the key pair specified by the Spec exists; it
-// doesn't check whether it needs to be renewed.
-func (spec *Spec) ready() bool {
-	if spec.tr == nil {
-		panic("cert: cannot check readiness because spec has an invalid transport")
-	}
-
-	return spec.tr.Provider.Ready()
-}
-
 // Lifespan returns a time.Duration for the certificate's validity.
 func (spec *Spec) Lifespan() time.Duration {
-	if spec.tr == nil {
-		panic("cert: cannot check certificate's lifespan because spec has an invalid transport")
+	t := spec.expiry.CA
+	if t.After(spec.expiry.Cert) {
+		t = spec.expiry.Cert
 	}
-
-	return spec.tr.Lifespan()
+	return time.Now().Sub(t)
 }
 
 // HasChangedOnDisk returns (removed, changed, err) to indicate if the spec has changed
@@ -294,7 +284,7 @@ func (spec *Spec) HasChangedOnDisk() (bool, bool, error) {
 // checkDiskPKI checks the PKI information on disk against cert spec and alerts upon differences
 // Specifically, it checks that private key on disk matches spec algorithm & keysize,
 // and certificate on disk matches CSR spec info
-func (spec *Spec) checkDiskPKI(certData []byte, keyData []byte) error {
+func (spec *Spec) checkDiskPKI(cert *x509.Certificate, keyData []byte) error {
 	csrRequest := spec.Request
 
 	// Read private key algorithm and keysize from disk, determine if RSA or ECDSA
@@ -337,15 +327,6 @@ func (spec *Spec) checkDiskPKI(certData []byte, keyData []byte) error {
 	}
 	metrics.KeysizeMismatchCount.WithLabelValues(spec.Path).Set(0)
 
-	// Check that certificate hostnames match spec hostnames
-	p, _ := pem.Decode(certData)
-	if p == nil {
-		return errors.New("Unable to pem decode certificate on disk")
-	}
-	cert, err := x509.ParseCertificate(p.Bytes)
-	if err != nil {
-		return err
-	}
 	// confirm that pkix is the same.  This catches things like OU being changed; these are slices
 	// of slices and there isn't a usable equality check, thus the .String() usage.
 	if csrRequest.Name().String() != cert.Subject.String() {
@@ -358,8 +339,14 @@ func (spec *Spec) checkDiskPKI(certData []byte, keyData []byte) error {
 	}
 	metrics.HostnameMismatchCount.WithLabelValues(spec.Path).Set(0)
 
+	pemCert := pem.EncodeToMemory(
+		&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: cert.Raw,
+		},
+	)
 	// Check if cert and key are valid pair
-	tlsCert, err := tls.X509KeyPair(certData, keyData)
+	tlsCert, err := tls.X509KeyPair(pemCert, keyData)
 	if err != nil || tlsCert.Leaf != nil {
 		metrics.KeypairMismatchCount.WithLabelValues(spec.Path).Set(1)
 		return fmt.Errorf("manager: Certificate and key on disk are not valid keypair: %s", err)
@@ -371,32 +358,13 @@ func (spec *Spec) checkDiskPKI(certData []byte, keyData []byte) error {
 // CertExpireTime returns the time at which this spec's Certificate is no
 // longer valid.
 func (spec *Spec) CertExpireTime() time.Time {
-	cert := spec.tr.Provider.Certificate()
-	if cert != nil {
-		return spec.tr.Provider.Certificate().NotAfter
-	}
-	return time.Time{}
+	return spec.expiry.Cert
 }
 
 // CAExpireTime returns the time at which this spec's CA is no
 // longer valid.
 func (spec *Spec) CAExpireTime() time.Time {
-	c := spec.CA.pem
-	if c == nil {
-		log.Debug("spec %s: No CA loaded", spec)
-		return time.Time{}
-	}
-	certPem, _ := pem.Decode(c)
-	if certPem == nil {
-		log.Debug("spec %s: Unable to pem decode CA certificate", spec)
-		return time.Time{}
-	}
-	parsedCert, err := x509.ParseCertificate(certPem.Bytes)
-	if err != nil {
-		log.Debug("spec %s: Unable to parse certificate", spec)
-		return time.Time{}
-	}
-	return parsedCert.NotAfter
+	return spec.expiry.CA
 }
 
 // ForceRenewal Reset the lifespan to force cfssl to regenerate
@@ -432,65 +400,81 @@ func (spec *Spec) ResetBackoff() {
 // Returns (TTL for PKI, error).  If an error occurs, the ttl is at best
 // a hint to the invoker as to when the next refresh is required- that said
 // the invoker should back off and try a refresh.
-func (spec *Spec) EnforcePKI(enableActions bool) (time.Duration, error) {
-	var certData []byte
-	var keyData []byte
-	var err error
-	certData, err = spec.Cert.ReadFile()
+func (spec *Spec) EnforcePKI(enableActions bool) error {
+
+	updateReason := ""
+	currentCA, err := spec.CA.getRemoteCert()
 	if err != nil {
-		log.Debugf("spec %s: cert failed to be read: %s", spec, err)
-	} else {
-		keyData, err = spec.Key.ReadFile()
+		log.Errorf("spec %s: failed getting remote: %s", spec, err)
+		return err
+	}
+	if spec.CA.File != nil {
+		existingCA, err := spec.CA.File.ReadCertificate()
 		if err != nil {
-			log.Debugf("spec %s: key failed to be read: %s", spec, err)
+			log.Infof("spec %s: ca on disk needs regeneration: %s", spec, err)
+			updateReason = "CA"
 		} else {
-			err = spec.checkDiskPKI(certData, keyData)
+			if !existingCA.Equal(currentCA) {
+				log.Debugf("spec %s: ca has changed", spec)
+				updateReason = "CA"
+			} else {
+				log.Debugf("spec %s: ca is the same", spec)
+			}
 		}
 	}
+
+	if updateReason == "" {
+		existingCert, err := spec.Cert.ReadCertificate()
+		if err != nil {
+			log.Debugf("spec %s: cert failed to be read: %s", spec, err)
+		} else {
+			keyData, err := spec.Key.ReadFile()
+			if err != nil {
+				log.Debugf("spec %s: key failed to be read: %s", spec, err)
+			} else {
+				err = spec.checkDiskPKI(existingCert, keyData)
+			}
+		}
+		if err != nil {
+			log.Infof("spec %s: forcing refresh due to %s", spec, err)
+			updateReason = "key"
+		}
+	}
+
+	if updateReason == "" {
+		if spec.tr.Lifespan() > 0 {
+			log.Debugf("spec %s is still up to date", spec)
+			return nil
+		}
+		log.Infof("spec %s is nearing expiry", spec)
+		updateReason = "key"
+	}
+
+	err = spec.renewPKI(currentCA)
 	if err != nil {
-		log.Infof("spec %s: forcing refresh due to %s", spec, err)
-		spec.ForceRenewal()
+		log.Errorf("manager: failed to renew %s; requeuing cert", spec)
+		return err
 	}
 
-	if err = spec.checkCA(); err != nil {
-		log.Errorf("manager: the CA for %s has changed, but the service couldn't be notified of the change", spec)
-	}
-
-	lifespan := time.Duration(0)
-	if !spec.ready() {
-		log.Debugf("manager: %s isn't ready", spec)
+	if enableActions {
+		err = spec.TakeAction(updateReason)
 	} else {
-		log.Debugf("manager: %s checking lifespan", spec)
-		lifespan = spec.Lifespan()
+		log.Infof("skipping actions for %s due to calling mode", spec)
 	}
-	log.Debugf("manager: %s has lifespan %s", spec, lifespan)
-	if lifespan <= 0 {
-		err := spec.renewPKI()
-		if err != nil {
-			log.Errorf("manager: failed to renew %s; requeuing cert", spec)
-			return 0, err
-		}
 
-		log.Debug("taking action due to key refresh")
-		if enableActions {
-			err = spec.TakeAction("key")
-		} else {
-			log.Infof("skipping actions for %s due to calling mode", spec)
-		}
-
-		// Even though there was an error managing the service
-		// associated with the certificate, the certificate has been
-		// renewed.
-		if err != nil {
-			metrics.ActionFailure.WithLabelValues(spec.Path, "key").Inc()
-			log.Errorf("manager: %s", err)
-		}
-
-		log.Info("manager: certificate successfully processed")
+	// Even though there was an error managing the service
+	// associated with the certificate, the certificate has been
+	// renewed.
+	if err != nil {
+		metrics.ActionFailure.WithLabelValues(spec.Path, "key").Inc()
+		log.Errorf("manager: %s", err)
 	}
+
+	log.Info("manager: certificate successfully processed")
+
 	metrics.Expires.WithLabelValues(spec.Path, "cert").Set(float64(spec.CertExpireTime().Unix()))
 
-	return spec.Lifespan(), nil
+	return nil
 }
 
 // TakeAction execute the configured svcmgr Action for this spec
@@ -508,7 +492,7 @@ func (spec *Spec) TakeAction(changeType string) error {
 const maxAttempts = 5
 
 // renewPKI Try to update the on disk PKI content with a fresh CA/cert as needed
-func (spec *Spec) renewPKI() error {
+func (spec *Spec) renewPKI(ca *x509.Certificate) error {
 	start := time.Now()
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		log.Infof("manager: processing certificate %s (attempt %d)", spec, attempts+1)
@@ -529,37 +513,21 @@ func (spec *Spec) renewPKI() error {
 		}
 
 		spec.ResetBackoff()
+		spec.expiry.Cert = spec.Certificate().NotAfter
+		if spec.CA.File != nil {
+			err = spec.CA.File.WriteFile(pem.EncodeToMemory(&pem.Block{
+				Type:  "CERTIFICATE",
+				Bytes: ca.Raw,
+			}))
+			if err == nil {
+				spec.expiry.CA = ca.NotAfter
+			}
+			return err
+		}
 		return nil
 	}
 	stop := time.Now()
 
 	spec.ResetBackoff()
 	return fmt.Errorf("manager: failed to renew %s in %d attempts (in %0.0f seconds)", spec, maxAttempts, stop.Sub(start).Seconds())
-}
-
-// checkCA checks the CA on the certificate and restarts the service
-// if needed.
-func (spec *Spec) checkCA() error {
-	var err error
-	var changed bool
-	if changed, err = spec.CA.Refresh(); err != nil {
-		metrics.ActionFailure.WithLabelValues(spec.Path, "CA").Inc()
-		return err
-	} else if changed {
-		metrics.Expires.WithLabelValues(spec.Path, "ca").Set(float64(spec.CAExpireTime().Unix()))
-		// if the spec doesn't write a CA, the consumer can't care about it changing- thus no need for an action to fire.
-		if spec.CA.File != nil {
-			log.Debug("taking action due to CA refresh")
-			err := spec.TakeAction("CA")
-			if err != nil {
-				metrics.ActionFailure.WithLabelValues(spec.Path, "CA").Inc()
-				log.Errorf("manager: %s", err)
-			}
-		} else {
-			log.Debug("no action taken due to CA not being written to disk")
-		}
-
-	}
-	metrics.Expires.WithLabelValues(spec.Path, "ca").Set(float64(spec.CAExpireTime().Unix()))
-	return err
 }
