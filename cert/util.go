@@ -3,6 +3,7 @@
 package cert
 
 import (
+	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
 	"sort"
@@ -56,4 +57,13 @@ func hostnamesEquals(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func verifyCertChain(ca *x509.Certificate, cert *x509.Certificate) error {
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	_, err := cert.Verify(x509.VerifyOptions{
+		Roots: roots,
+	})
+	return err
 }
