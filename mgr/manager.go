@@ -186,7 +186,7 @@ func (m *Manager) CheckCerts() {
 	log.Info("manager: checking certificates")
 	for _, cert := range m.Certs {
 		log.Debugf("manager: checking %s", cert)
-		_, err := cert.EnforcePKI(true)
+		err := cert.EnforcePKI(true)
 		if err != nil {
 			log.Errorf("Failed processing %s due to %s", cert, err)
 		}

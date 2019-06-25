@@ -1,7 +1,9 @@
 package cert
 
 import (
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io/ioutil"
 	"os"
@@ -193,4 +195,33 @@ func (f *File) Unlink() error {
 		return nil
 	}
 	return err
+}
+
+// CertificateFile is a convenience wrapper of File
+type CertificateFile struct {
+	File
+}
+
+// ReadCertificate read and parse the on disk certificate
+func (cf *CertificateFile) ReadCertificate() (*x509.Certificate, error) {
+	data, err := cf.ReadFile()
+	if err != nil {
+		return nil, err
+	}
+	pemData, _ := pem.Decode(data)
+	if pemData == nil {
+		return nil, errors.New("Unable to pem decode certificate")
+	}
+	cert, err := x509.ParseCertificate(pemData.Bytes)
+	return cert, err
+}
+
+// UnmarshalYAML implement yaml unmarshalling logic
+func (cf *CertificateFile) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	return unmarshal(&(cf.File))
+}
+
+// UnmarshalJSON implement json unmarshalling logic
+func (cf *CertificateFile) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &(cf.File))
 }
