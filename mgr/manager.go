@@ -117,10 +117,13 @@ var validExtensions = map[string]bool{
 
 func (m *Manager) loadSpec(path string, strict bool) (*cert.Spec, error) {
 	log.Infof("manager: loading spec from %s", path)
+	path = filepath.Clean(path)
+	metrics.SpecLoadCount.WithLabelValues(path).Inc()
 	spec, err := cert.Load(path, m.DefaultRemote, m.Before, m.ServiceManager, strict)
 	if err == nil {
 		log.Debugf("manager: successfully loaded spec from %s", path)
 	} else {
+		metrics.SpecLoadFailureCount.WithLabelValues(path).Inc()
 		log.Errorf("managed: failed loading spec from %s: %s", path, err)
 	}
 	return spec, err
