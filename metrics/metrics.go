@@ -23,70 +23,97 @@ var (
 	SpecWatchCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricsNamespace,
-			Name:      "specs_watched_total",
+			Subsystem: "spec",
+			Name:      "watched_total",
 			Help:      "Number of specs being watched",
 		},
 		[]string{"spec_path", "svcmgr", "action", "ca"},
 	)
 
-	// Expires contains the time of the next certificate
+	// SpecRefreshCount counts the number of PKI regeneration taken by a spec
+	SpecRefreshCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricsNamespace,
+			Subsystem: "spec",
+			Name:      "refresh_count",
+			Help:      "Number of times a spec has determined PKI must be refreshed",
+		},
+		[]string{"spec_path"},
+	)
+
+	// SpecCheckCount counts the number of PKI regeneration taken by a spec
+	SpecCheckCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricsNamespace,
+			Subsystem: "spec",
+			Name:      "check_count",
+			Help:      "Number of times a spec PKI was checked",
+		},
+		[]string{"spec_path"},
+	)
+
+	// SpecLoadCount counts the number of times a spec was loaded from disk
+	SpecLoadCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricsNamespace,
+			Subsystem: "spec",
+			Name:      "load_count",
+			Help:      "Number of times a spec was loaded from disk",
+		},
+		[]string{"spec_path"},
+	)
+
+	// SpecLoadFailureCount counts the number of times a spec couldn't be loaded from disk
+	SpecLoadFailureCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricsNamespace,
+			Subsystem: "spec",
+			Name:      "load_failure_count",
+			Help:      "Number of times a spec was loaded from disk but failed to be parsed",
+		},
+		[]string{"spec_path"},
+	)
+	// SpecExpires contains the time of the next certificate
 	// expiry.
-	Expires = prometheus.NewGaugeVec(
+	SpecExpires = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricsNamespace,
-			Name:      "cert_expire_timestamp",
-			Help:      "The unix time for when the given spec and type expires",
+			Subsystem: "spec",
+			Name:      "expire_timestamp",
+			Help:      "The unix time for when the given spec and PKI type expires",
 		},
 		[]string{"spec_path", "type"},
 	)
 
-	// FailureCount contains a count of the number of failures to
-	// generate a key pair or renew a certificate.
-	FailureCount = prometheus.NewCounterVec(
+	// SpecWriteCount contains the number of times the PKI on disk was written
+	SpecWriteCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricsNamespace,
-			Name:      "cert_renewal_failures",
-			Help:      "Number of keypair generation or cert renewal failures",
+			Subsystem: "spec",
+			Name:      "write_count",
+			Help:      "The number of times PKI on disk has been rewritten",
 		},
 		[]string{"spec_path"},
 	)
 
-	// AlgorithmMismatchCount counts mismatches occurred between algorithm on disk vs algorithm in spec
-	AlgorithmMismatchCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+	// SpecWriteFailureCount contains the number of times the PKI on disk failed to be written
+	SpecWriteFailureCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
 			Namespace: metricsNamespace,
-			Name:      "algorithm_mismatch",
-			Help:      "Number of mismatches between cert algorithm on disk vs algorithm specified in spec",
+			Subsystem: "spec",
+			Name:      "write_failure_count",
+			Help:      "The number of times PKI on disk failed to be rewritten",
 		},
 		[]string{"spec_path"},
 	)
 
-	// KeysizeMismatchCount counts mismatches occurred between keysize on disk vs keysize in spec
-	KeysizeMismatchCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+	// SpecRequestFailureCount counts the number of times a spec failed to request a certificate from upstream.
+	SpecRequestFailureCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
 			Namespace: metricsNamespace,
-			Name:      "keysize_mismatch",
-			Help:      "Number of mismatches between keysize disk vs keysize specified in spec",
-		},
-		[]string{"spec_path"},
-	)
-
-	// HostnameMismatchCount counts mismatches occurred between cert hostnames on disk vs cert hostnames in spec
-	HostnameMismatchCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: metricsNamespace,
-			Name:      "hostname_mismatch",
-			Help:      "Number of mismatches between cert hostnames on disk vs cert hostnames specified in spec",
-		},
-		[]string{"spec_path"},
-	)
-
-	// KeypairMismatchCount counts TLS mismatch between key and certificate on disk
-	KeypairMismatchCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: metricsNamespace,
-			Name:      "keypair_mismatch",
-			Help:      "Number of TLS mismatches between key and certificate on disk",
+			Subsystem: "spec",
+			Name:      "request_failure_count",
+			Help:      "Number of failed requests to CA authority for new PKI material",
 		},
 		[]string{"spec_path"},
 	)
@@ -101,22 +128,22 @@ var (
 		[]string{"directory"},
 	)
 
-	// ActionCount counts actions taken by spec
-	ActionCount = prometheus.NewCounterVec(
+	// ActionAttemptedCount counts actions taken by a spec
+	ActionAttemptedCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricsNamespace,
-			Name:      "action_count",
+			Name:      "action_attempted_count",
 			Help:      "Number of times a spec has taken action",
 		},
 		[]string{"spec_path", "change_type"},
 	)
 
-	// ActionFailure counts number of times an action taken by spec failed
-	ActionFailure = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
+	// ActionFailedCount counts failed actions taken by a spec
+	ActionFailedCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
 			Namespace: metricsNamespace,
-			Name:      "action_failure",
-			Help:      "Number of times a spec's action has failed",
+			Name:      "action_failed_count",
+			Help:      "Number of failed action runs for a spec",
 		},
 		[]string{"spec_path", "change_type"},
 	)
@@ -126,15 +153,17 @@ func init() {
 	startTime = time.Now()
 
 	prometheus.MustRegister(SpecWatchCount)
-	prometheus.MustRegister(Expires)
-	prometheus.MustRegister(FailureCount)
-	prometheus.MustRegister(AlgorithmMismatchCount)
-	prometheus.MustRegister(KeysizeMismatchCount)
-	prometheus.MustRegister(HostnameMismatchCount)
-	prometheus.MustRegister(KeypairMismatchCount)
+	prometheus.MustRegister(SpecRefreshCount)
+	prometheus.MustRegister(SpecCheckCount)
+	prometheus.MustRegister(SpecLoadCount)
+	prometheus.MustRegister(SpecLoadFailureCount)
+	prometheus.MustRegister(SpecExpires)
+	prometheus.MustRegister(SpecWriteCount)
+	prometheus.MustRegister(SpecWriteFailureCount)
+	prometheus.MustRegister(SpecRequestFailureCount)
 	prometheus.MustRegister(ManagerInterval)
-	prometheus.MustRegister(ActionCount)
-	prometheus.MustRegister(ActionFailure)
+	prometheus.MustRegister(ActionAttemptedCount)
+	prometheus.MustRegister(ActionFailedCount)
 }
 
 var indexPage = `<html>

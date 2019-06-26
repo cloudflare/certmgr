@@ -297,16 +297,12 @@ func (spec *Spec) checkDiskPKI(cert *x509.Certificate, keyData []byte) error {
 	sizeSpec := csrRequest.KeyRequest.Size()
 
 	if algDisk != algSpec {
-		metrics.AlgorithmMismatchCount.WithLabelValues(spec.Path).Set(1)
 		return fmt.Errorf("manager: disk alg is %s but spec alg is %s", algDisk, algSpec)
 	}
-	metrics.AlgorithmMismatchCount.WithLabelValues(spec.Path).Set(0)
 
 	if sizeDisk != sizeSpec {
-		metrics.KeysizeMismatchCount.WithLabelValues(spec.Path).Set(1)
 		return fmt.Errorf("manager: disk key size is %d but spec key size is %d", sizeDisk, sizeSpec)
 	}
-	metrics.KeysizeMismatchCount.WithLabelValues(spec.Path).Set(0)
 
 	// confirm that pkix is the same.  This catches things like OU being changed; these are slices
 	// of slices and there isn't a usable equality check, thus the .String() usage.
@@ -315,18 +311,14 @@ func (spec *Spec) checkDiskPKI(cert *x509.Certificate, keyData []byte) error {
 	}
 
 	if !hostnamesEquals(csrRequest.Hosts, cert.DNSNames) {
-		metrics.HostnameMismatchCount.WithLabelValues(spec.Path).Set(1)
 		return errors.New("manager: DNS names in cert on disk don't match with hostnames in spec")
 	}
-	metrics.HostnameMismatchCount.WithLabelValues(spec.Path).Set(0)
 
 	// Check if cert and key are valid pair
 	tlsCert, err := tls.X509KeyPair(encodeCertificateToPEM(cert), keyData)
 	if err != nil || tlsCert.Leaf != nil {
-		metrics.KeypairMismatchCount.WithLabelValues(spec.Path).Set(1)
 		return fmt.Errorf("manager: Certificate and key on disk are not valid keypair: %s", err)
 	}
-	metrics.KeypairMismatchCount.WithLabelValues(spec.Path).Set(0)
 	return nil
 }
 
@@ -403,12 +395,16 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 	updateReason := ""
 	var currentCA *x509.Certificate
 	var err error
+
+	metrics.SpecCheckCount.WithLabelValues(spec.Path).Inc()
+
 	if spec.renewalForced {
 		updateReason = "key"
 	} else {
 		currentCA, err = spec.CA.getRemoteCert()
 		if err != nil {
 			log.Errorf("spec %s: failed getting remote: %s", spec, err)
+			metrics.SpecRequestFailureCount.WithLabelValues(spec.Path).Inc()
 			return err
 		}
 
@@ -458,7 +454,6 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 	// associated with the certificate, the certificate has been
 	// renewed.
 	if err != nil {
-		metrics.ActionFailure.WithLabelValues(spec.Path, "key").Inc()
 		log.Errorf("manager: %s", err)
 	}
 
@@ -474,8 +469,12 @@ func (spec *Spec) TakeAction(changeType string) error {
 	if spec.CA.File != nil {
 		caPath = spec.CA.File.Path
 	}
-	metrics.ActionCount.WithLabelValues(spec.Cert.Path, changeType).Inc()
-	return spec.serviceManager.TakeAction(changeType, spec.Path, caPath, spec.Cert.Path, spec.Key.Path)
+	metrics.ActionAttemptedCount.WithLabelValues(spec.Path, changeType).Inc()
+	err := spec.serviceManager.TakeAction(changeType, spec.Path, caPath, spec.Cert.Path, spec.Key.Path)
+	if err != nil {
+		metrics.ActionFailedCount.WithLabelValues(spec.Path, changeType).Inc()
+	}
+	return err
 }
 
 // The maximum number of attempts before giving up.
@@ -483,6 +482,14 @@ const maxAttempts = 5
 
 // renewPKI Try to update the on disk PKI content with a fresh CA/cert as needed
 func (spec *Spec) renewPKI(ca *x509.Certificate) error {
+	metrics.SpecRefreshCount.WithLabelValues(spec.Path).Inc()
+	failed := true
+	defer func() {
+		if failed {
+			metrics.SpecWriteFailureCount.WithLabelValues(spec.Path).Inc()
+		}
+	}()
+
 	start := time.Now()
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		log.Infof("manager: processing certificate %s (attempt %d)", spec, attempts+1)
@@ -497,7 +504,7 @@ func (spec *Spec) renewPKI(ca *x509.Certificate) error {
 			}
 			backoff := spec.Backoff()
 			log.Warningf("manager: failed to renew certificate (err=%s), backing off for %0.0f seconds", err, backoff.Seconds())
-			metrics.FailureCount.WithLabelValues(spec.Path).Inc()
+			metrics.SpecRequestFailureCount.WithLabelValues(spec.Path).Inc()
 			time.Sleep(backoff)
 			continue
 		}
@@ -525,6 +532,7 @@ func (spec *Spec) renewPKI(ca *x509.Certificate) error {
 			}
 		}
 		spec.updateCAExpiry(ca.NotAfter)
+		failed = false
 		return nil
 	}
 	stop := time.Now()
@@ -536,9 +544,9 @@ func (spec *Spec) renewPKI(ca *x509.Certificate) error {
 
 func (spec *Spec) updateCertExpiry(notAfter time.Time) {
 	spec.expiry.Cert = notAfter
-	metrics.Expires.WithLabelValues(spec.Path, "cert").Set(float64(notAfter.Unix()))
+	metrics.SpecExpires.WithLabelValues(spec.Path, "cert").Set(float64(notAfter.Unix()))
 }
 func (spec *Spec) updateCAExpiry(notAfter time.Time) {
 	spec.expiry.CA = notAfter
-	metrics.Expires.WithLabelValues(spec.Path, "cert").Set(float64(notAfter.Unix()))
+	metrics.SpecExpires.WithLabelValues(spec.Path, "cert").Set(float64(notAfter.Unix()))
 }
