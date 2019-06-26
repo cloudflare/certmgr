@@ -212,8 +212,12 @@ func (cf *CertificateFile) ReadCertificate() (*x509.Certificate, error) {
 	if pemData == nil {
 		return nil, errors.New("Unable to pem decode certificate")
 	}
-	cert, err := x509.ParseCertificate(pemData.Bytes)
-	return cert, err
+	return x509.ParseCertificate(pemData.Bytes)
+}
+
+// WriteCertificate serialize and write a certificate to disk
+func (cf *CertificateFile) WriteCertificate(cert *x509.Certificate) error {
+	return cf.WriteFile(encodeCertificateToPEM(cert))
 }
 
 // UnmarshalYAML implement yaml unmarshalling logic
