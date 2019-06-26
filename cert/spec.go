@@ -266,8 +266,6 @@ func (spec *Spec) HasChangedOnDisk() (bool, bool, error) {
 // Specifically, it checks that private key on disk matches spec algorithm & keysize,
 // and certificate on disk matches CSR spec info
 func (spec *Spec) checkDiskPKI(cert *x509.Certificate, keyData []byte) error {
-	// first, just verify that the cert presented is actually still validly signed by the CA.
-
 	csrRequest := spec.Request
 
 	// Read private key algorithm and keysize from disk, determine if RSA or ECDSA
