@@ -3,8 +3,12 @@
 package cert
 
 import (
+	"crypto/ecdsa"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -66,4 +70,28 @@ func verifyCertChain(ca *x509.Certificate, cert *x509.Certificate) error {
 		Roots: roots,
 	})
 	return err
+}
+
+func encodeKeyToPem(key interface{}) ([]byte, error) {
+	switch key.(type) {
+	case *ecdsa.PrivateKey:
+		data, err := x509.MarshalECPrivateKey(key.(*ecdsa.PrivateKey))
+		if err != nil {
+			return nil, err
+		}
+		return pem.EncodeToMemory(
+			&pem.Block{
+				Type:  "EC PRIVATE KEY",
+				Bytes: data,
+			},
+		), nil
+	case *rsa.PrivateKey:
+		return pem.EncodeToMemory(
+			&pem.Block{
+				Type:  "RSA PRIVATE KEY",
+				Bytes: x509.MarshalPKCS1PrivateKey(key.(*rsa.PrivateKey)),
+			},
+		), nil
+	}
+	return nil, errors.New("private key is neither ecdsa nor rsa thus cannot be encoded")
 }
