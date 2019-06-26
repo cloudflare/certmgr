@@ -95,3 +95,13 @@ func encodeKeyToPem(key interface{}) ([]byte, error) {
 	}
 	return nil, errors.New("private key is neither ecdsa nor rsa thus cannot be encoded")
 }
+
+// encodeCertificateToPEM serialize a certificate into pem format
+func encodeCertificateToPEM(cert *x509.Certificate) []byte {
+	return pem.EncodeToMemory(
+		&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: cert.Raw,
+		},
+	)
+}

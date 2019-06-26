@@ -321,13 +321,7 @@ func (spec *Spec) checkDiskPKI(cert *x509.Certificate, keyData []byte) error {
 	metrics.HostnameMismatchCount.WithLabelValues(spec.Path).Set(0)
 
 	// Check if cert and key are valid pair
-	pemCert := pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "CERTIFICATE",
-			Bytes: cert.Raw,
-		},
-	)
-	tlsCert, err := tls.X509KeyPair(pemCert, keyData)
+	tlsCert, err := tls.X509KeyPair(encodeCertificateToPEM(cert), keyData)
 	if err != nil || tlsCert.Leaf != nil {
 		metrics.KeypairMismatchCount.WithLabelValues(spec.Path).Set(1)
 		return fmt.Errorf("manager: Certificate and key on disk are not valid keypair: %s", err)
@@ -513,14 +507,7 @@ func (spec *Spec) renewPKI(ca *x509.Certificate) error {
 		}
 
 		spec.ResetBackoff()
-		err = spec.Cert.File.WriteFile(
-			pem.EncodeToMemory(
-				&pem.Block{
-					Type:  "CERTIFICATE",
-					Bytes: pair.Leaf.Raw,
-				},
-			),
-		)
+		err = spec.Cert.WriteCertificate(pair.Leaf)
 		if err != nil {
 			log.Errorf("spec %s: failed to write certificate to disk: %s", spec, err)
 			return err
@@ -532,16 +519,10 @@ func (spec *Spec) renewPKI(ca *x509.Certificate) error {
 		}
 		spec.updateCertExpiry(pair.Leaf.NotAfter)
 		if spec.CA.File != nil {
-			err = spec.CA.File.WriteFile(
-				pem.EncodeToMemory(
-					&pem.Block{
-						Type:  "CERTIFICATE",
-						Bytes: ca.Raw,
-					},
-				),
-			)
-
-			return err
+			err = spec.CA.File.WriteCertificate(ca)
+			if err != nil {
+				return err
+			}
 		}
 		spec.updateCAExpiry(ca.NotAfter)
 		return nil
