@@ -127,21 +127,19 @@ func (spec *Spec) identity() (*core.Identity, error) {
 	return ident, nil
 }
 
-func newSpecFromPath(path string) (*Spec, error) {
+// loadFromPath load and fill this spec from the given pathway
+// If this invocation returns an error, the spec instance should be discarded
+// and recreated.
+func (spec *Spec) loadFromPath(path string) error {
 	in, err := ioutil.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	specStat, err := os.Stat(path)
 	if err != nil {
 		// Hit the race; we read the file but someone wiped it.
-		return nil, err
-	}
-	var spec = &Spec{
-		Request:  csr.New(),
-		Path:     path,
-		loadTime: specStat.ModTime(),
+		return err
 	}
 
 	switch filepath.Ext(path) {
@@ -153,22 +151,35 @@ func newSpecFromPath(path string) (*Spec, error) {
 		err = fmt.Errorf("cert: unrecognised spec file format for %s", path)
 	}
 
-	return spec, err
+	if err == nil {
+		spec.loadTime = specStat.ModTime()
+		spec.Path = path
+	}
+	return err
 }
 
 // Load reads a spec from a JSON configuration file.
 func Load(path, remote string, before time.Duration, defaultServiceManager string, strict bool) (*Spec, error) {
-	spec, err := newSpecFromPath(path)
+	var spec = &Spec{
+		Request:            csr.New(),
+		ServiceManagerName: defaultServiceManager,
+	}
+	spec.CA.Remote = remote
+	err := spec.loadFromPath(path)
 	if err != nil {
 		return nil, err
 	}
 
 	if spec.CA.Remote == "" {
-		spec.CA.Remote = remote
+		return nil, errors.New("no remote specified in authority (either in the spec or in the certmgr config)")
 	}
 
-	if spec.CA.Remote == "" {
-		return nil, errors.New("cert: no remote specified in authority (either in the spec or in the certmgr config)")
+	if (spec.Cert == nil) != (spec.Key == nil) {
+		return nil, errors.New("if either cert or key are defined, both fields must be defined as must request to successfully write the keypair to disk")
+	}
+
+	if spec.Cert == nil && spec.CA.File == nil {
+		return nil, errors.New("spec doesn't define either a CA, or keypair to write to disk")
 	}
 
 	identity, err := spec.identity()
@@ -178,10 +189,6 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 	spec.tr, err = transport.New(before, identity)
 	if err != nil {
 		return nil, err
-	}
-
-	if spec.ServiceManagerName == "" {
-		spec.ServiceManagerName = defaultServiceManager
 	}
 
 	manager, _ := svcmgr.New("dummy", "", "")
@@ -197,7 +204,7 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 	if (spec.Action == "" || spec.Action == "nop") && (spec.ServiceManagerName != "" && spec.ServiceManagerName != "dummy") {
 		log.Warningf("manager: No action defined for a non-dummy svcmgr in certificate spec. This can lead to undefined certificate renewal behavior.")
 		if strict {
-			return nil, fmt.Errorf("failed to load spec %s due to strict mode and non dummy service manager", path)
+			return nil, fmt.Errorf("failed to load due to strict mode and non dummy service manager")
 		}
 	}
 	spec.serviceManager = manager
@@ -329,16 +336,6 @@ func (spec *Spec) ForceRenewal() {
 	spec.renewalForced = true
 }
 
-// Backoff returns the backoff delay.
-func (spec *Spec) Backoff() time.Duration {
-	return spec.tr.Backoff.Duration()
-}
-
-// ResetBackoff resets the spec's backoff.
-func (spec *Spec) ResetBackoff() {
-	spec.tr.Backoff.Reset()
-}
-
 // checkDiskCertKey performs sanity checks against the cert/key read from disk, identifying
 // if it's valid and still usable.
 func (spec *Spec) checkDiskCertKey(ca *x509.Certificate) error {
@@ -414,7 +411,7 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 			}
 		}
 
-		if updateReason == "" {
+		if updateReason == "" && spec.Cert != nil {
 			err := spec.checkDiskCertKey(currentCA)
 			if err != nil {
 				log.Infof("spec %s: forcing refresh due to %s", spec, err)
@@ -428,9 +425,17 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 		return nil
 	}
 
-	err = spec.renewPKI(currentCA)
+	var pair *tls.Certificate
+	if spec.Cert != nil {
+		pair, err = spec.fetchNewKeyPair()
+		if err != nil {
+			log.Errorf("spec %s: failed to fetch new certificate pair", spec)
+			return err
+		}
+	}
+
+	err = spec.writePKIToDisk(currentCA, pair)
 	if err != nil {
-		log.Errorf("manager: failed to renew %s; requeuing cert", spec)
 		return err
 	}
 
@@ -470,15 +475,55 @@ func (spec *Spec) TakeAction(changeType string) error {
 // The maximum number of attempts before giving up.
 const maxAttempts = 5
 
-// renewPKI Try to update the on disk PKI content with a fresh CA/cert as needed
-func (spec *Spec) renewPKI(ca *x509.Certificate) error {
-	metrics.SpecRefreshCount.WithLabelValues(spec.Path).Inc()
-	failed := true
+// writePKIToDisk writes the given PKI materials to disk, returning errors if anything occurs.
+// CA must always be passed, but is optionally written if the spec defines an on disk CA.
+// keypair can be nil if the spec does not write a cert/key- if it's just used for tracking the CA.
+func (spec *Spec) writePKIToDisk(ca *x509.Certificate, keyPair *tls.Certificate) (err error) {
+
+	metrics.SpecWriteCount.WithLabelValues(spec.Path).Inc()
+
 	defer func() {
-		if failed {
+		if err != nil {
 			metrics.SpecWriteFailureCount.WithLabelValues(spec.Path).Inc()
 		}
 	}()
+
+	if spec.CA.File != nil {
+		err = spec.CA.File.WriteCertificate(ca)
+		if err != nil {
+			return
+		}
+		spec.updateCAExpiry(ca.NotAfter)
+	}
+	if keyPair == nil {
+		return nil
+	}
+	keyData, err := encodeKeyToPem(keyPair.PrivateKey)
+	if err != nil {
+		return
+	}
+
+	err = spec.Cert.WriteCertificate(keyPair.Leaf)
+	if err != nil {
+		log.Errorf("spec %s: failed to write certificate to disk: %s", spec, err)
+		return
+	}
+	err = spec.Key.WriteFile(keyData)
+
+	if err != nil {
+		log.Errorf("spec %s: failed to write key to disk: %s", spec, err)
+		return
+	}
+	spec.updateCertExpiry(keyPair.Leaf.NotAfter)
+
+	return
+}
+
+// fetchNewKeyPair request a fresh certificate/key from the transport, backing off as needed.
+func (spec *Spec) fetchNewKeyPair() (*tls.Certificate, error) {
+	metrics.SpecRefreshCount.WithLabelValues(spec.Path).Inc()
+
+	defer spec.tr.Backoff.Reset()
 
 	start := time.Now()
 	for attempts := 0; attempts < maxAttempts; attempts++ {
@@ -492,44 +537,18 @@ func (spec *Spec) renewPKI(ca *x509.Certificate) error {
 				// auth key is bad.
 				log.Fatalf("invalid auth key for %s", spec)
 			}
-			backoff := spec.Backoff()
+			backoff := spec.tr.Backoff.Duration()
 			log.Warningf("manager: failed to renew certificate (err=%s), backing off for %0.0f seconds", err, backoff.Seconds())
 			metrics.SpecRequestFailureCount.WithLabelValues(spec.Path).Inc()
 			time.Sleep(backoff)
 			continue
 		}
-		keyData, err := encodeKeyToPem(pair.PrivateKey)
-		if err != nil {
-			return err
-		}
 
-		spec.ResetBackoff()
-		err = spec.Cert.WriteCertificate(pair.Leaf)
-		if err != nil {
-			log.Errorf("spec %s: failed to write certificate to disk: %s", spec, err)
-			return err
-		}
-		err = spec.Key.WriteFile(keyData)
-		if err != nil {
-			log.Errorf("spec %s: failed to write key to disk: %s", spec, err)
-			return err
-		}
-		spec.updateCertExpiry(pair.Leaf.NotAfter)
-		if spec.CA.File != nil {
-			err = spec.CA.File.WriteCertificate(ca)
-			if err != nil {
-				return err
-			}
-		}
-		spec.updateCAExpiry(ca.NotAfter)
-		failed = false
-		return nil
+		return pair, nil
 	}
 	stop := time.Now()
 
-	spec.ResetBackoff()
-	spec.renewalForced = false
-	return fmt.Errorf("manager: failed to renew %s in %d attempts (in %0.0f seconds)", spec, maxAttempts, stop.Sub(start).Seconds())
+	return nil, fmt.Errorf("manager: failed to renew %s in %d attempts (in %0.0f seconds)", spec, maxAttempts, stop.Sub(start).Seconds())
 }
 
 func (spec *Spec) updateCertExpiry(notAfter time.Time) {

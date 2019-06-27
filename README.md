@@ -72,9 +72,13 @@ This contains all of the currently available parameters:
 * `metrics_port`: specifies the port for the Prometheus HTTP endpoint.
 
 
-## Certificate Specs
+## PKI Specs
 
-An example certificate spec:
+A spec is used to manage PKI material for a consuming app.  A spec does not have to request a certificate/key, and does not have to request a CA; it must request at least one of those two modes however.
+
+Said another way; you can use this to maintain a CA on disk.  You can use this to maintain certificate/key pair signed by the given authority; you can do both modes if you wish, but one must be specified by the spec.
+
+An example spec that writes both a CA and certificate key pair defined in JSON:
 
 ```
 {
@@ -125,6 +129,26 @@ An example certificate spec:
 }
 ```
 
+And this is an example that writes just the CA to disk:
+```
+{
+    "service": "nginx",
+    "action": "restart",
+    "authority": {
+        "remote": "ca.example.net:8888",
+        "auth_key": "012345678012345678",
+        "label": "www_ca",
+        "profile": "three-month",
+        "file": {
+            "path": "/etc/myservice/ca.pem",
+            "owner": "www-data",
+            "group": "www-data"
+        },
+        root_ca: "/etc/cfssl/api_server_ca.pem"
+    }
+}
+```
+
 A certificate spec has the following fields:
 
 * `service`: this is optional, and names the service that the `action`
@@ -136,9 +160,9 @@ A certificate spec has the following fields:
   svcmgr per cert.  If you're using this in a raw certificate definition,
   you likely want the 'command' svcmgr- see that section for details of
   how to use it.
-* `request`: a CFSSL certificate request (see below).
+* `request`: a CFSSL certificate request (see below).  If htis is specified, a `certificate` and `private_key` field is required.
 * `private_key` and `certificate`: file specifications (see below) for
-  the private key and certificate.
+  the private key and certificate.  Both must be specified- as must `request`- if you wish to manage a certificate/key pair.
 * `authority`: contains the CFSSL CA configuration (see below).
 
 **Note**: `certmgr` will throw a warning if `svcmgr` is `dummy` _AND_ `action` is "nop" or undefined. This is because such a setup will not properly restart or reload a service upon certiifcate renewal, which will likely cause your service to crash. Running `certmgr` with the `--strict` flag will not even load a certificate spec with a `dummy svcmgr` and undefined/nop `action` configuration.
