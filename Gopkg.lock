@@ -18,7 +18,7 @@
   revision = "647f3cdfc87a18586e279c97afd6526d01b0d063"
 
 [[projects]]
-  digest = "1:7084097383623e463946989477105a78690db88cd2db7549d3d8016e1a241dc1"
+  digest = "1:15b779e9f1a08c039a13fe0f9c78d3d69a83fa8a83c4de321ae481e2a56b488d"
   name = "github.com/cloudflare/cfssl"
   packages = [
     "api",
@@ -44,8 +44,7 @@
     "transport/roots/system",
   ]
   pruneopts = "UT"
-  revision = "768cd563887febaad559b511aaa5964823ccb4ab"
-  version = "1.3.3"
+  revision = "2001f384ec4fea8e6e648cd89d07bda9bd7568c1"
 
 [[projects]]
   digest = "1:abeb38ade3f32a92943e5be54f55ed6d6e3b6602761d74b4aab4c9dd45c18abd"
