@@ -27,7 +27,8 @@
 
 [[constraint]]
   name = "github.com/cloudflare/cfssl"
-  version = "1.3.3"
+  # we need just beyond 1.3.3 for yaml parsing fixes.
+  revision = "2001f384ec4fea8e6e648cd89d07bda9bd7568c1"
 
 [[constraint]]
   name = "github.com/prometheus/client_golang"
