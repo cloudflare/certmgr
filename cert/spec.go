@@ -214,6 +214,9 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 		}
 	}
 	spec.serviceManager = manager
+	if err == nil {
+		metrics.SpecExpiresBeforeThreshold.WithLabelValues(spec.Path).Set(float64(before.Seconds()))
+	}
 	return spec, err
 }
 
@@ -556,6 +559,7 @@ func (spec *Spec) updateCAExpiry(notAfter time.Time) {
 func (spec *Spec) WipeMetrics() {
 	metrics.SpecRefreshCount.DeleteLabelValues(spec.Path)
 	metrics.SpecCheckCount.DeleteLabelValues(spec.Path)
+	metrics.SpecExpiresBeforeThreshold.DeleteLabelValues(spec.Path)
 	metrics.SpecWriteCount.DeleteLabelValues(spec.Path)
 	metrics.SpecWriteFailureCount.DeleteLabelValues(spec.Path)
 	metrics.SpecRequestFailureCount.DeleteLabelValues(spec.Path)

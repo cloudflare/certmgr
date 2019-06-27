@@ -85,6 +85,18 @@ var (
 		[]string{"spec_path", "type"},
 	)
 
+	// SpecExpiresBeforeThreshold exports how much lead time we give for trying to renew a cert
+	// before it expires.
+	SpecExpiresBeforeThreshold = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricsNamespace,
+			Subsystem: "spec",
+			Name:      "expire_before_duration_seconds",
+			Help:      "When a spec is within this number of seconds of an expiry, renewal begins",
+		},
+		[]string{"spec_path"},
+	)
+
 	// SpecWriteCount contains the number of times the PKI on disk was written
 	SpecWriteCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -158,6 +170,7 @@ func init() {
 	prometheus.MustRegister(SpecLoadCount)
 	prometheus.MustRegister(SpecLoadFailureCount)
 	prometheus.MustRegister(SpecExpires)
+	prometheus.MustRegister(SpecExpiresBeforeThreshold)
 	prometheus.MustRegister(SpecWriteCount)
 	prometheus.MustRegister(SpecWriteFailureCount)
 	prometheus.MustRegister(SpecRequestFailureCount)
