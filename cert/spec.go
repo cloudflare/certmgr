@@ -5,7 +5,6 @@ package cert
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -159,7 +158,7 @@ func newSpecFromPath(path string) (*Spec, error) {
 
 	switch filepath.Ext(path) {
 	case ".json":
-		err = json.Unmarshal(in, &spec)
+		err = strictJSONUnmarshal(in, &spec)
 	case ".yml", ".yaml":
 		err = yaml.UnmarshalStrict(in, &spec)
 	default:
