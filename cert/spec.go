@@ -548,7 +548,7 @@ func (spec *Spec) updateCertExpiry(notAfter time.Time) {
 }
 func (spec *Spec) updateCAExpiry(notAfter time.Time) {
 	spec.expiry.CA = notAfter
-	metrics.SpecExpires.WithLabelValues(spec.Path, "cert").Set(float64(notAfter.Unix()))
+	metrics.SpecExpires.WithLabelValues(spec.Path, "ca").Set(float64(notAfter.Unix()))
 }
 
 // WipeMetrics Wipes any metrics that may be recorded for this spec.
