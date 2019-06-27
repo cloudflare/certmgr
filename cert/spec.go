@@ -16,6 +16,7 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/cenkalti/backoff"
 	"github.com/cloudflare/certmgr/metrics"
 	"github.com/cloudflare/certmgr/svcmgr"
 	"github.com/cloudflare/cfssl/csr"
@@ -23,6 +24,9 @@ import (
 	"github.com/cloudflare/cfssl/transport"
 	"github.com/cloudflare/cfssl/transport/core"
 )
+
+// These are defaults used for limiting the backoff logic for cfssl transport
+const backoffMaxDelay = time.Minute * 2
 
 // A Spec contains information needed to monitor and renew a
 // certificate.
@@ -212,25 +216,6 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 		metrics.SpecExpiresBeforeThreshold.WithLabelValues(spec.Path).Set(float64(before.Seconds()))
 	}
 	return spec, err
-}
-
-// refreshKeys will make sure the key pair in the Spec has loaded keys
-// and has a valid certificate. It will handle any persistence, check
-// that the certificate is valid (i.e. that its expiry date is within
-// the Before date), and handle certificate reissuance as needed.
-func (spec *Spec) refreshKeys() (*tls.Certificate, error) {
-	if spec.tr == nil {
-		panic("cert: cannot refresh keys because spec has an invalid transport")
-	}
-
-	err := spec.tr.RefreshKeys()
-	if err != nil {
-		return nil, err
-	}
-	// fetch the pair ourselves; persistent mode doesn't handle key algo/size changes, and
-	// it allows for a window where the content has permissions not matching the spec's directive.
-	pair, err := spec.tr.Provider.X509KeyPair()
-	return &pair, err
 }
 
 // Lifespan returns a time.Duration for the certificate's validity.
@@ -472,9 +457,6 @@ func (spec *Spec) TakeAction(changeType string) error {
 	return err
 }
 
-// The maximum number of attempts before giving up.
-const maxAttempts = 5
-
 // writePKIToDisk writes the given PKI materials to disk, returning errors if anything occurs.
 // CA must always be passed, but is optionally written if the spec defines an on disk CA.
 // keypair can be nil if the spec does not write a cert/key- if it's just used for tracking the CA.
@@ -523,32 +505,41 @@ func (spec *Spec) writePKIToDisk(ca *x509.Certificate, keyPair *tls.Certificate)
 func (spec *Spec) fetchNewKeyPair() (*tls.Certificate, error) {
 	metrics.SpecRefreshCount.WithLabelValues(spec.Path).Inc()
 
-	defer spec.tr.Backoff.Reset()
+	// use exponential backoff rather than using cfssl's backoff implementation; that implementation
+	// can back off up to an hour before returning control back to the invoker; that isn't
+	// desirable.  If we can't get the requests in in a timely fahsion, we'll wake up and
+	// revisit via our own scheduling.
 
-	start := time.Now()
-	for attempts := 0; attempts < maxAttempts; attempts++ {
-		log.Infof("manager: processing certificate %s (attempt %d)", spec, attempts+1)
-		pair, err := spec.refreshKeys()
-		if err != nil {
-			if isAuthError(err) {
-				// Killing the server is really the
-				// only valid option here; it will
-				// force an investigation into why the
-				// auth key is bad.
-				log.Fatalf("invalid auth key for %s", spec)
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = backoffMaxDelay
+	err := backoff.Retry(
+		func() error {
+
+			err := spec.tr.RefreshKeys()
+			if err != nil {
+				metrics.SpecRequestFailureCount.WithLabelValues(spec.Path).Inc()
+				if isAuthError(err) {
+					log.Errorf("spec %s: invalid auth key.  Giving up", spec)
+					err = backoff.Permanent(errors.New("invalid auth key"))
+				} else {
+					log.Warningf("spec %s: failed fetching new cert: %s", spec, err)
+				}
 			}
-			backoff := spec.tr.Backoff.Duration()
-			log.Warningf("manager: failed to renew certificate (err=%s), backing off for %0.0f seconds", err, backoff.Seconds())
-			metrics.SpecRequestFailureCount.WithLabelValues(spec.Path).Inc()
-			time.Sleep(backoff)
-			continue
-		}
+			return err
+		},
+		b,
+	)
 
-		return pair, nil
+	if err != nil {
+		log.Errorf("spec %s: gave up on attempt to fetch new certificate/key", spec)
+		return nil, err
 	}
-	stop := time.Now()
 
-	return nil, fmt.Errorf("manager: failed to renew %s in %d attempts (in %0.0f seconds)", spec, maxAttempts, stop.Sub(start).Seconds())
+	pair, err := spec.tr.Provider.X509KeyPair()
+	if err != nil {
+		log.Errorf("spec %s: likely internal error, fetched new cert/key but couldn't create a keypair from it: %s", spec, err)
+	}
+	return &pair, err
 }
 
 func (spec *Spec) updateCertExpiry(notAfter time.Time) {
