@@ -79,19 +79,7 @@ type Spec struct {
 }
 
 func (spec *Spec) String() string {
-	extra := displayName(spec.Request.Name())
-	if extra == "" {
-		extra = spec.Service
-	}
-
-	if extra == "" {
-		extra = spec.Cert.Path
-	}
-	if extra != "" {
-		return fmt.Sprintf("%s: %s", spec.Cert.Path, extra)
-	}
-
-	return spec.Cert.Path
+	return spec.Path
 }
 
 // Identity creates a transport package identity for the certificate.
