@@ -10,6 +10,14 @@
   version = "v1.0.0"
 
 [[projects]]
+  digest = "1:c1100fc71e23b6a32b2c68a5202a848fd13811d5a10b12edb8019c3667d1cd9a"
+  name = "github.com/cenkalti/backoff"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "4b4cebaf850ec58f1bb1fec5bdebdf8501c2bc3f"
+  version = "v3.0.0"
+
+[[projects]]
   branch = "master"
   digest = "1:643fe12757fc28604199954aa88738b60c4beacbdfefa4a3aa943e8383ffbcc1"
   name = "github.com/cloudflare/backoff"
@@ -280,6 +288,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/cenkalti/backoff",
     "github.com/cloudflare/cfssl/api",
     "github.com/cloudflare/cfssl/api/client",
     "github.com/cloudflare/cfssl/csr",
