@@ -226,6 +226,8 @@ func (m *Manager) Server(strict bool) {
 					log.Errorf("failed to reload spec %s due to %s. Continuing to use old spec.", spec, err)
 					continue
 				}
+				// ensure we don't leave any stale metrics hanging around.
+				spec.WipeMetrics()
 				log.Infof("reloaded spec %s due to detected changes", spec)
 				m.Certs[idx] = newSpec
 			}
