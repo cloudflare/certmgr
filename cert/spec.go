@@ -550,3 +550,18 @@ func (spec *Spec) updateCAExpiry(notAfter time.Time) {
 	spec.expiry.CA = notAfter
 	metrics.SpecExpires.WithLabelValues(spec.Path, "cert").Set(float64(notAfter.Unix()))
 }
+
+// WipeMetrics Wipes any metrics that may be recorded for this spec.
+// In general this should be invoked only when a spec is being removed from tracking.
+func (spec *Spec) WipeMetrics() {
+	metrics.SpecRefreshCount.DeleteLabelValues(spec.Path)
+	metrics.SpecCheckCount.DeleteLabelValues(spec.Path)
+	metrics.SpecWriteCount.DeleteLabelValues(spec.Path)
+	metrics.SpecWriteFailureCount.DeleteLabelValues(spec.Path)
+	metrics.SpecRequestFailureCount.DeleteLabelValues(spec.Path)
+	for _, t := range []string{"ca", "cert", "key"} {
+		metrics.SpecExpires.DeleteLabelValues(spec.Path, t)
+		metrics.ActionAttemptedCount.DeleteLabelValues(spec.Path, t)
+		metrics.ActionFailedCount.DeleteLabelValues(spec.Path, t)
+	}
+}
