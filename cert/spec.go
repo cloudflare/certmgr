@@ -425,7 +425,7 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 	}
 
 	if enableActions {
-		err = spec.TakeAction(updateReason)
+		err = spec.takeAction(updateReason)
 	} else {
 		log.Infof("skipping actions for %s due to calling mode", spec)
 	}
@@ -442,8 +442,8 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 	return nil
 }
 
-// TakeAction execute the configured svcmgr Action for this spec
-func (spec *Spec) TakeAction(changeType string) error {
+// takeAction execute the configured svcmgr Action for this spec
+func (spec *Spec) takeAction(changeType string) error {
 	log.Infof("manager: executing configured action due to change type %s for %s", changeType, spec.Cert.Path)
 	caPath := ""
 	if spec.CA.File != nil {
