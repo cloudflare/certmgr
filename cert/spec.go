@@ -467,6 +467,8 @@ func (spec *Spec) writePKIToDisk(ca *x509.Certificate, keyPair *tls.Certificate)
 	defer func() {
 		if err != nil {
 			metrics.SpecWriteFailureCount.WithLabelValues(spec.Path).Inc()
+		} else {
+			spec.renewalForced = false
 		}
 	}()
 
