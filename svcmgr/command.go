@@ -1,9 +1,9 @@
 package svcmgr
 
 import (
-	"fmt"
 	"os/exec"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -35,7 +35,7 @@ func newCommandManager(action string, service string) (Manager, error) {
 		log.Debugf("svcmgr 'command': validating the action definition %s", action)
 		err := run(shellBinary, "-n", "-c", action)
 		if err != nil {
-			return nil, fmt.Errorf("svcmgr 'command': action '%s' failed bash -n -c parse checks: %s", action, err)
+			return nil, errors.WithMessagef(err, "action %s failed bash -nc parse checks", action)
 		}
 	} else {
 		log.Warningf("svcmgr 'command': skipping parse check for '%s' since bash couldn't be found", action)

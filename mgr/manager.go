@@ -1,7 +1,7 @@
 package mgr
 
 import (
-	"fmt"
+	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -98,7 +98,7 @@ func New(dir string, remote string, svcmgr string, before time.Duration, interva
 // for a Manager to be ready.
 func (m *Manager) validate() error {
 	if m.Dir == "" {
-		return fmt.Errorf("manager: invalid manager configuration (missing spec dir)")
+		return errors.New("manager doesn't define a spec dir")
 	}
 	m.Dir = filepath.Clean(m.Dir)
 
