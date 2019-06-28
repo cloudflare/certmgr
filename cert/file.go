@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/cloudflare/cfssl/log"
+	log "github.com/sirupsen/logrus"
 )
 
 var idRegexp = regexp.MustCompile(`^\d+$`)

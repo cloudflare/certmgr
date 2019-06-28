@@ -11,14 +11,18 @@ import (
 	"github.com/cloudflare/certmgr/metrics"
 	"github.com/cloudflare/certmgr/mgr"
 	"github.com/cloudflare/certmgr/svcmgr"
-	"github.com/cloudflare/cfssl/log"
+	log "github.com/sirupsen/logrus"
+
+	// needed for ensuring cfssl logs go through logrus
+	cfssl_log "github.com/cloudflare/cfssl/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var cfgFile string
 var logLevel string
-var debug, strict bool
+var jsonLogging bool
+var strict bool
 var requireSpecs bool
 
 var manager struct {
@@ -98,7 +102,8 @@ func init() {
 	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", fmt.Sprintf("service manager, must be one of: %s", strings.Join(backends, ", ")))
 	RootCmd.PersistentFlags().DurationVarP(&manager.Before, "before", "t", mgr.DefaultBefore, "how long before certificates expire to start renewing (in duration format)")
 	RootCmd.PersistentFlags().DurationVarP(&manager.Interval, "interval", "i", mgr.DefaultInterval, "how long to sleep before checking for renewal (in duration format)")
-	RootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug mode")
+	RootCmd.PersistentFlags().BoolVarP(&jsonLogging, "log.json", "", false, "if passed, logging will be in json")
+	RootCmd.PersistentFlags().StringVarP(&logLevel, "log.level", "l", "info", "logging level.  Must be one [debug|info|warning|error]")
 	RootCmd.PersistentFlags().BoolVar(&strict, "strict", false, "refuse to load certificate without valid renewal action defined")
 	RootCmd.Flags().BoolVarP(&requireSpecs, "requireSpecs", "", false, "fail the daemon startup if no specs were found in the directory to watch")
 
@@ -106,7 +111,6 @@ func init() {
 	viper.BindPFlag("svcmgr", RootCmd.PersistentFlags().Lookup("svcmgr"))
 	viper.BindPFlag("before", RootCmd.PersistentFlags().Lookup("before"))
 	viper.BindPFlag("interval", RootCmd.PersistentFlags().Lookup("interval"))
-	viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -122,12 +126,63 @@ func initConfig() {
 	viper.AutomaticEnv() // read in environment variables that match
 
 	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		log.Info("certmgr: loading from config file ", viper.ConfigFileUsed())
+	if err := viper.ReadInConfig(); err != nil {
+		log.Fatal(err)
 	}
 
-	if debug {
-		log.Level = log.LevelDebug
-		log.Debug("debug mode enabled")
+	if err := configureLogging(jsonLogging, logLevel); err != nil {
+		log.Fatal(err)
 	}
+}
+
+// cfsslLogAdaptor implements SyslogWriter interface, redirecting to logrus logging.
+type cfsslLogAdaptor struct{}
+
+func (cfssl *cfsslLogAdaptor) Debug(s string) {
+	log.Debug(s)
+}
+
+func (cfssl *cfsslLogAdaptor) Info(s string) {
+	log.Info(s)
+}
+
+func (cfssl *cfsslLogAdaptor) Warning(s string) {
+	log.Warning(s)
+}
+
+func (cfssl *cfsslLogAdaptor) Err(s string) {
+	log.Error(s)
+}
+
+func (cfssl *cfsslLogAdaptor) Crit(s string) {
+	log.Error(s)
+}
+
+func (cfssl *cfsslLogAdaptor) Emerg(s string) {
+	log.Error(s)
+}
+
+func configureLogging(jsonLogging bool, logLevel string) error {
+
+	// install our shim for cfssl.
+	cfssl_log.SetLogger(&cfsslLogAdaptor{})
+
+	// configure json logging if requested.
+	if jsonLogging {
+		log.SetFormatter(&log.JSONFormatter{})
+	}
+
+	switch strings.ToLower(logLevel) {
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+	case "info":
+		log.SetLevel(log.InfoLevel)
+	case "warning":
+		log.SetLevel(log.WarnLevel)
+	case "error":
+		log.SetLevel(log.ErrorLevel)
+	default:
+		return fmt.Errorf("log level %s is not a valid level", logLevel)
+	}
+	return nil
 }

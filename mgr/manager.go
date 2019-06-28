@@ -9,7 +9,7 @@ import (
 
 	"github.com/cloudflare/certmgr/cert"
 	"github.com/cloudflare/certmgr/metrics"
-	"github.com/cloudflare/cfssl/log"
+	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v2"
 )
 
