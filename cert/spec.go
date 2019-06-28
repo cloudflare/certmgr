@@ -6,13 +6,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"gopkg.in/yaml.v2"
 
@@ -152,7 +153,7 @@ func (spec *Spec) loadFromPath(path string) error {
 	case ".yml", ".yaml":
 		err = yaml.UnmarshalStrict(in, &spec)
 	default:
-		err = fmt.Errorf("cert: unrecognised spec file format for %s", path)
+		err = fmt.Errorf("unrecognised spec file format for %s", path)
 	}
 
 	if err == nil {
@@ -206,7 +207,7 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 	// If action is undefined and svcmgr isn't dummy, we will throw a warning due to likely undefined cert renewal behavior
 	// We will refuse to even store/keep track of the cert if we're in strict mode
 	if (spec.Action == "" || spec.Action == "nop") && (spec.ServiceManagerName != "" && spec.ServiceManagerName != "dummy") {
-		log.Warningf("manager: No action defined for a non-dummy svcmgr in certificate spec. This can lead to undefined certificate renewal behavior.")
+		log.Warningf("spec %s: no action defined for a non-dummy svcmgr in certificate spec. This can lead to undefined certificate renewal behavior.", spec)
 		if strict {
 			return nil, fmt.Errorf("failed to load due to strict mode and non dummy service manager")
 		}
@@ -253,7 +254,7 @@ func (spec *Spec) checkDiskPKI(cert *x509.Certificate, keyData []byte) error {
 	// Read private key algorithm and keysize from disk, determine if RSA or ECDSA
 	pemKey, _ := pem.Decode(keyData)
 	if pemKey == nil {
-		return errors.New("Unable to pem decode private key on disk")
+		return errors.New("unable to pem decode private key on disk")
 	}
 
 	var algDisk string
@@ -263,7 +264,7 @@ func (spec *Spec) checkDiskPKI(cert *x509.Certificate, keyData []byte) error {
 		privKey, err := x509.ParseECPrivateKey(pemKey.Bytes)
 		if err != nil {
 			// If we get here, then invalid key type
-			return errors.New("manager: Unable to parse private key algorithm from disk")
+			return errors.New("unable to parse private key algorithm from disk")
 		}
 		// If we get here, then it's ECDSA
 		algDisk = "ecdsa"
@@ -279,11 +280,11 @@ func (spec *Spec) checkDiskPKI(cert *x509.Certificate, keyData []byte) error {
 	sizeSpec := csrRequest.KeyRequest.Size()
 
 	if algDisk != algSpec {
-		return fmt.Errorf("manager: disk alg is %s but spec alg is %s", algDisk, algSpec)
+		return fmt.Errorf("disk alg is %s but spec alg is %s", algDisk, algSpec)
 	}
 
 	if sizeDisk != sizeSpec {
-		return fmt.Errorf("manager: disk key size is %d but spec key size is %d", sizeDisk, sizeSpec)
+		return fmt.Errorf("disk key size is %d but spec key size is %d", sizeDisk, sizeSpec)
 	}
 
 	// confirm that pkix is the same.  This catches things like OU being changed; these are slices
@@ -293,13 +294,13 @@ func (spec *Spec) checkDiskPKI(cert *x509.Certificate, keyData []byte) error {
 	}
 
 	if !hostnamesEquals(csrRequest.Hosts, cert.DNSNames) {
-		return errors.New("manager: DNS names in cert on disk don't match with hostnames in spec")
+		return errors.New("DNS names in cert on disk don't match with hostnames in spec")
 	}
 
 	// Check if cert and key are valid pair
 	tlsCert, err := tls.X509KeyPair(encodeCertificateToPEM(cert), keyData)
 	if err != nil || tlsCert.Leaf != nil {
-		return fmt.Errorf("manager: Certificate and key on disk are not valid keypair: %s", err)
+		return fmt.Errorf("certificate and key on disk are not valid keypair: %s", err)
 	}
 	return nil
 }
@@ -347,9 +348,13 @@ func (spec *Spec) checkDiskCertKey(ca *x509.Certificate) error {
 	if err != nil {
 		return err
 	}
-	now := time.Now().Add(spec.tr.Before)
+	now := time.Now()
 	if now.After(existingCert.NotAfter) {
 		return fmt.Errorf("certificate already expired at %s", existingCert.NotAfter)
+	}
+	now = now.Add(spec.tr.Before)
+	if now.After(existingCert.NotAfter) {
+		return fmt.Errorf("certificate is within the renewal threshold of %s: %s", spec.tr.Before, existingCert.NotAfter)
 	}
 	if existingCert.NotBefore.After(now) {
 		// someone needs a better clock.
@@ -372,34 +377,33 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 
 	if spec.renewalForced {
 		updateReason = "key"
+		err = errors.New("regeneration was forced")
 	} else {
 		currentCA, err = spec.CA.getRemoteCert()
 		if err != nil {
-			log.Errorf("spec %s: failed getting remote: %s", spec, err)
 			metrics.SpecRequestFailureCount.WithLabelValues(spec.Path).Inc()
-			return err
+			return errors.WithMessage(err, "failed getting remote")
 		}
 
 		if spec.CA.File != nil {
-			existingCA, err := spec.CA.File.ReadCertificate()
+			var existingCA *x509.Certificate
+			existingCA, err = spec.CA.File.ReadCertificate()
 			if err != nil {
-				log.Infof("spec %s: ca on disk needs regeneration: %s", spec, err)
+				err = errors.WithMessagef(err, "CA on disk is unusable")
 				updateReason = "CA"
 			} else {
 				spec.updateCAExpiry(existingCA.NotAfter)
 				if !existingCA.Equal(currentCA) {
-					log.Debugf("spec %s: ca has changed", spec)
+					err = errors.New("on disk CA is no longer equal to new CA")
 					updateReason = "CA"
-				} else {
-					log.Debugf("spec %s: ca is the same", spec)
 				}
 			}
 		}
 
 		if updateReason == "" && spec.Cert != nil {
-			err := spec.checkDiskCertKey(currentCA)
+			err = spec.checkDiskCertKey(currentCA)
 			if err != nil {
-				log.Infof("spec %s: forcing refresh due to %s", spec, err)
+				err = errors.WithMessagef(err, "on disk PKI failed validation")
 				updateReason = "key"
 			}
 		}
@@ -410,12 +414,13 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 		return nil
 	}
 
+	log.Infof("spec %s: renewal is needed due to: %s", spec, err)
+
 	var pair *tls.Certificate
 	if spec.Cert != nil {
 		pair, err = spec.fetchNewKeyPair()
 		if err != nil {
-			log.Errorf("spec %s: failed to fetch new certificate pair", spec)
-			return err
+			return errors.WithMessagef(err, "failed to fetch new certificate pair")
 		}
 	}
 
@@ -426,15 +431,16 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 
 	if enableActions {
 		err = spec.takeAction(updateReason)
+		if err != nil {
+			// Even though there was an error managing the service
+			// associated with the certificate, the certificate has been
+			// renewed.
+			log.Errorf("spec %s: renewed on disk but failed taking action: %s", spec, err)
+			return nil
+		}
+		log.Infof("spec %s: action successfully executed", spec)
 	} else {
 		log.Infof("skipping actions for %s due to calling mode", spec)
-	}
-
-	// Even though there was an error managing the service
-	// associated with the certificate, the certificate has been
-	// renewed.
-	if err != nil {
-		log.Errorf("manager: %s", err)
 	}
 
 	log.Info("manager: certificate successfully processed")
@@ -444,7 +450,7 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 
 // takeAction execute the configured svcmgr Action for this spec
 func (spec *Spec) takeAction(changeType string) error {
-	log.Infof("manager: executing configured action due to change type %s for %s", changeType, spec.Cert.Path)
+	log.Debugf("spec %s: taking action due to %s", spec, changeType)
 	caPath := ""
 	if spec.CA.File != nil {
 		caPath = spec.CA.File.Path
@@ -475,13 +481,16 @@ func (spec *Spec) writePKIToDisk(ca *x509.Certificate, keyPair *tls.Certificate)
 	if spec.CA.File != nil {
 		err = spec.CA.File.WriteCertificate(ca)
 		if err != nil {
+			err = errors.WithMessagef(err, "failed writing CA to disk")
 			return
 		}
 		spec.updateCAExpiry(ca.NotAfter)
 	}
+
 	if keyPair == nil {
 		return nil
 	}
+
 	keyData, err := encodeKeyToPem(keyPair.PrivateKey)
 	if err != nil {
 		return
@@ -489,13 +498,13 @@ func (spec *Spec) writePKIToDisk(ca *x509.Certificate, keyPair *tls.Certificate)
 
 	err = spec.Cert.WriteCertificate(keyPair.Leaf)
 	if err != nil {
-		log.Errorf("spec %s: failed to write certificate to disk: %s", spec, err)
+		err = errors.WithMessagef(err, "failed writing certificate to disk")
 		return
 	}
 	err = spec.Key.WriteFile(keyData)
 
 	if err != nil {
-		log.Errorf("spec %s: failed to write key to disk: %s", spec, err)
+		err = errors.WithMessage(err, "failed writing key to disk")
 		return
 	}
 	spec.updateCertExpiry(keyPair.Leaf.NotAfter)
@@ -533,8 +542,7 @@ func (spec *Spec) fetchNewKeyPair() (*tls.Certificate, error) {
 	)
 
 	if err != nil {
-		log.Errorf("spec %s: gave up on attempt to fetch new certificate/key", spec)
-		return nil, err
+		return nil, errors.WithMessage(err, "while fetching certificate/key")
 	}
 
 	pair, err := spec.tr.Provider.X509KeyPair()
