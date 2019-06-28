@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/cloudflare/cfssl/log"
 	"github.com/spf13/cobra"
 )
 
@@ -23,8 +23,7 @@ TLS key pairs they identify exist, are valid, and that they are up-to-date.`,
 func ensure(cmd *cobra.Command, args []string) {
 	mgr, err := newManager()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
-		os.Exit(1)
+		log.Fatalf("failed creating manager", err)
 	}
 
 	strict, err := cmd.Flags().GetBool("strict")
@@ -33,13 +32,11 @@ func ensure(cmd *cobra.Command, args []string) {
 	}
 	err = mgr.Load(false, strict)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
-		os.Exit(1)
+		log.Fatalf("failed loading manager: %s", err)
 	}
 
 	if !allowZeroSpecs && len(mgr.Certs) == 0 {
-		fmt.Fprint(os.Stderr, "Failed: No specs were found to process\n")
-		os.Exit(1)
+		log.Fatalf("Failed: No specs were found to process")
 	}
 
 	if ensureTolerance < 1 {
@@ -53,7 +50,7 @@ func ensure(cmd *cobra.Command, args []string) {
 			}
 			err = cert.EnforcePKI(enableActions)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed processing spec %s due to %s; %d remaining attempts", cert.Path, err, attempt)
+				log.Errorf("Failed processing spec %s due to %s; %d remaining attempts", cert.Path, err, attempt)
 			} else {
 				break
 			}
@@ -63,7 +60,7 @@ func ensure(cmd *cobra.Command, args []string) {
 		}
 	}
 	if failedSpecs == 0 {
-		fmt.Println("Ok")
+		log.Info("processed specs without issue")
 	}
 	os.Exit(failedSpecs)
 }

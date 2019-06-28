@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"fmt"
-	"os"
-
+	"github.com/cloudflare/cfssl/log"
 	"github.com/spf13/cobra"
 )
 
@@ -21,8 +19,7 @@ checkable during the certificate provisioning process.`,
 func check(cmd *cobra.Command, args []string) {
 	mgr, err := newManager()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
-		os.Exit(1)
+		log.Fatalf("Failed: %s", err)
 	}
 	strict, err := cmd.Flags().GetBool("strict")
 	if err != nil {
@@ -30,11 +27,8 @@ func check(cmd *cobra.Command, args []string) {
 	}
 	err = mgr.Load(false, strict)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
-		os.Exit(1)
+		log.Fatalf("Failed: %s", err)
 	}
-
-	fmt.Println("OK")
 }
 
 func init() {
