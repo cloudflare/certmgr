@@ -9,7 +9,7 @@ import (
 	_ "net/http/pprof" // start a pprof endpoint
 	"time"
 
-	"github.com/cloudflare/cfssl/log"
+	log "github.com/sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )

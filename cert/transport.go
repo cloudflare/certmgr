@@ -5,7 +5,7 @@ import (
 
 	"github.com/cloudflare/cfssl/api"
 	"github.com/cloudflare/cfssl/errors"
-	"github.com/cloudflare/cfssl/log"
+	log "github.com/sirupsen/logrus"
 )
 
 // Utility functions for interacting with the transport package.

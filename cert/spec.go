@@ -20,9 +20,9 @@ import (
 	"github.com/cloudflare/certmgr/metrics"
 	"github.com/cloudflare/certmgr/svcmgr"
 	"github.com/cloudflare/cfssl/csr"
-	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/cfssl/transport"
 	"github.com/cloudflare/cfssl/transport/core"
+	log "github.com/sirupsen/logrus"
 )
 
 // These are defaults used for limiting the backoff logic for cfssl transport

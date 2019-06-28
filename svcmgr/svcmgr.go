@@ -10,7 +10,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/cloudflare/cfssl/log"
+	log "github.com/sirupsen/logrus"
 )
 
 type managerCreator func(action string, service string) (Manager, error)

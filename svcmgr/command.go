@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/cloudflare/cfssl/log"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
