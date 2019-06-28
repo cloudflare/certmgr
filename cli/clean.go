@@ -1,17 +1,16 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/cloudflare/cfssl/log"
 	"github.com/spf13/cobra"
 )
 
 func clean(cmd *cobra.Command, args []string) {
 	mgr, err := newManager()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
-		os.Exit(1)
+		log.Fatalf("Failed: %s", err)
 	}
 
 	strict, err := cmd.Flags().GetBool("strict")
@@ -20,33 +19,30 @@ func clean(cmd *cobra.Command, args []string) {
 	}
 	err = mgr.Load(false, strict)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
-		os.Exit(1)
+		log.Fatalf("failed: %s", err)
 	}
 
 	var failed bool
 	for _, cert := range mgr.Certs {
 		err := cert.Key.Unlink()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "certmgr: failed to remove the private key for %s (%s)\n",
-				cert, err)
+			log.Errorf("failed to remove the private key for %s (%s)", cert, err)
 			failed = true
 		}
 
 		err = cert.Cert.Unlink()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "certmgr: failed to remove the certificate for %s (%s)\n",
-				cert, err)
+			log.Errorf("failed to remove the certificate for %s (%s)", cert, err)
 			failed = true
 		}
 
 		if err == nil {
-			fmt.Println("certmgr: successfully cleaned ", cert)
+			log.Infof("successfully cleaned %s", cert)
 		}
 	}
 
 	if failed {
-		fmt.Fprintf(os.Stderr, "certmgr: errors were encountered cleaning the certificates and private keys\n")
+		log.Warningf("errors were encountered cleaning the certificates and private keys")
 		os.Exit(1)
 	}
 }
