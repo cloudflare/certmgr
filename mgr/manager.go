@@ -45,6 +45,9 @@ type Manager struct {
 
 	// Certs contains the list of certificates to manage.
 	Certs []*cert.Spec `yaml:",omitempty"`
+
+	// isLoaded tracks if we've loaded from disk already
+	isLoaded bool
 }
 
 // UnmarshallYAML update a Manager instance via deserializing the given yaml
@@ -115,11 +118,11 @@ var validExtensions = map[string]bool{
 	".yml":  true,
 }
 
-func (m *Manager) loadSpec(path string, strict bool) (*cert.Spec, error) {
+func (m *Manager) loadSpec(path string) (*cert.Spec, error) {
 	log.Infof("manager: loading spec from %s", path)
 	path = filepath.Clean(path)
 	metrics.SpecLoadCount.WithLabelValues(path).Inc()
-	spec, err := cert.Load(path, m.DefaultRemote, m.Before, m.ServiceManager, strict)
+	spec, err := cert.Load(path, m.DefaultRemote, m.Before, m.ServiceManager)
 	if err == nil {
 		log.Debugf("manager: successfully loaded spec from %s", path)
 	} else {
@@ -130,16 +133,12 @@ func (m *Manager) loadSpec(path string, strict bool) (*cert.Spec, error) {
 }
 
 // Load reads the certificate specs from the spec directory.
-func (m *Manager) Load(forced, strict bool) error {
-	if (m.Certs != nil || len(m.Certs) > 0) && !forced {
-		log.Debugf("manager: certificates already loaded")
-		return nil
+func (m *Manager) Load() error {
+	if m.isLoaded {
+		return errors.New("manager is already loaded")
 	}
 
-	if forced {
-		m.Certs = nil
-	}
-
+	m.Certs = make([]*cert.Spec, 0)
 	log.Info("manager: loading certificates from ", m.Dir)
 	walker := func(path string, info os.FileInfo, err error) error {
 		if info == nil {
@@ -158,7 +157,7 @@ func (m *Manager) Load(forced, strict bool) error {
 			return nil
 		}
 
-		spec, err := m.loadSpec(path, strict)
+		spec, err := m.loadSpec(path)
 		if err != nil {
 			log.Errorf("stopping directory scan due to %s", err)
 			return err
@@ -178,6 +177,7 @@ func (m *Manager) Load(forced, strict bool) error {
 		log.Warning("manager: no certificate specs found")
 	}
 
+	m.isLoaded = true
 	log.Infof("manager: watching %d certificates", len(m.Certs))
 	return nil
 }
@@ -198,7 +198,7 @@ func (m *Manager) CheckCerts() {
 }
 
 // Server runs the Manager server.
-func (m *Manager) Server(strict bool) {
+func (m *Manager) Server() {
 	// NB: this loop could be more intelligent; for example,
 	// updating the next expiration independently of checking
 	// certificates.
@@ -221,7 +221,7 @@ func (m *Manager) Server(strict bool) {
 				continue
 			}
 			if changed {
-				newSpec, err := m.loadSpec(spec.Path, strict)
+				newSpec, err := m.loadSpec(spec.Path)
 				if err != nil {
 					log.Errorf("failed to reload spec %s due to %s. Continuing to use old spec.", spec, err)
 					continue

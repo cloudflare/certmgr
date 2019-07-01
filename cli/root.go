@@ -22,7 +22,6 @@ import (
 var cfgFile string
 var logLevel string
 var jsonLogging bool
-var strict bool
 var requireSpecs bool
 
 var manager struct {
@@ -47,11 +46,8 @@ func root(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatalf("certmgr: %s", err)
 	}
-	strict, err := cmd.Flags().GetBool("strict")
-	if err != nil {
-		strict = false
-	}
-	err = mgr.Load(false, strict)
+
+	err = mgr.Load()
 	if err != nil {
 		log.Fatalf("certmgr: %s", err)
 	}
@@ -70,7 +66,7 @@ func root(cmd *cobra.Command, args []string) {
 		viper.GetString("metrics_address"),
 		viper.GetString("metrics_port"),
 	)
-	mgr.Server(strict)
+	mgr.Server()
 }
 
 // RootCmd this is our command processor for CLI interactions
@@ -104,7 +100,6 @@ func init() {
 	RootCmd.PersistentFlags().DurationVarP(&manager.Interval, "interval", "i", mgr.DefaultInterval, "how long to sleep before checking for renewal (in duration format)")
 	RootCmd.PersistentFlags().BoolVarP(&jsonLogging, "log.json", "", false, "if passed, logging will be in json")
 	RootCmd.PersistentFlags().StringVarP(&logLevel, "log.level", "l", "info", "logging level.  Must be one [debug|info|warning|error]")
-	RootCmd.PersistentFlags().BoolVar(&strict, "strict", false, "refuse to load certificate without valid renewal action defined")
 	RootCmd.Flags().BoolVarP(&requireSpecs, "requireSpecs", "", false, "fail the daemon startup if no specs were found in the directory to watch")
 
 	viper.BindPFlag("dir", RootCmd.PersistentFlags().Lookup("dir"))
