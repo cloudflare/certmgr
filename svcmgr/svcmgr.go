@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -54,6 +55,9 @@ func New(name string, action string, service string) (Manager, error) {
 	}
 
 	manager, err := smFunc(action, service)
+	if err != nil && action == "" && service == "" {
+		return nil, errors.WithMessage(err, "failed to instantiate due to empty action/service; perhaps you meant to use the 'dummy' service manager?")
+	}
 	return manager, err
 }
 
