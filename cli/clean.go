@@ -13,11 +13,7 @@ func clean(cmd *cobra.Command, args []string) {
 		log.Fatalf("Failed: %s", err)
 	}
 
-	strict, err := cmd.Flags().GetBool("strict")
-	if err != nil {
-		strict = false
-	}
-	err = mgr.Load(false, strict)
+	err = mgr.Load()
 	if err != nil {
 		log.Fatalf("failed: %s", err)
 	}

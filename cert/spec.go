@@ -164,10 +164,9 @@ func (spec *Spec) loadFromPath(path string) error {
 }
 
 // Load reads a spec from a JSON configuration file.
-func Load(path, remote string, before time.Duration, defaultServiceManager string, strict bool) (*Spec, error) {
+func Load(path, remote string, before time.Duration, defaultServiceManager string) (*Spec, error) {
 	var spec = &Spec{
-		Request:            csr.New(),
-		ServiceManagerName: defaultServiceManager,
+		Request: csr.New(),
 	}
 	spec.CA.Remote = remote
 	err := spec.loadFromPath(path)
@@ -196,27 +195,25 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 		return nil, err
 	}
 
-	manager, _ := svcmgr.New("dummy", "", "")
-	if spec.Action != "" && spec.Action != "nop" {
-		manager, err = svcmgr.New(spec.ServiceManagerName, spec.Action, spec.Service)
-		if err != nil {
-			return nil, err
+	// if no service manager was explicitly defined, use default if
+	// no action/service is defined; else use the default.
+	// If the default is not a dummy, it'll throw an error- which is desired
+	// since that means the spec has a broken notification definition.
+	if spec.ServiceManagerName == "" {
+		spec.ServiceManagerName = defaultServiceManager
+		if spec.Action == "" && spec.Service == "" {
+			log.Warningf("spec %s defines no action, thus cannot not be notified of PKI changes", path)
+			spec.ServiceManagerName = "dummy"
 		}
 	}
 
-	// If action is undefined and svcmgr isn't dummy, we will throw a warning due to likely undefined cert renewal behavior
-	// We will refuse to even store/keep track of the cert if we're in strict mode
-	if (spec.Action == "" || spec.Action == "nop") && (spec.ServiceManagerName != "" && spec.ServiceManagerName != "dummy") {
-		log.Warningf("spec %s: no action defined for a non-dummy svcmgr in certificate spec. This can lead to undefined certificate renewal behavior.", spec)
-		if strict {
-			return nil, fmt.Errorf("failed to load due to strict mode and non dummy service manager")
-		}
+	spec.serviceManager, err = svcmgr.New(spec.ServiceManagerName, spec.Action, spec.Service)
+	if err != nil {
+		return nil, errors.WithMessagef(err, "while parsing spec")
 	}
-	spec.serviceManager = manager
-	if err == nil {
-		metrics.SpecExpiresBeforeThreshold.WithLabelValues(spec.Path).Set(float64(before.Seconds()))
-	}
-	return spec, err
+
+	metrics.SpecExpiresBeforeThreshold.WithLabelValues(spec.Path).Set(float64(before.Seconds()))
+	return spec, nil
 }
 
 // Lifespan returns a time.Duration for the certificate's validity.
