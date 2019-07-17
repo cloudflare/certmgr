@@ -372,15 +372,16 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 
 	metrics.SpecCheckCount.WithLabelValues(spec.Path).Inc()
 
+	currentCA, err = spec.CA.getRemoteCert()
+	if err != nil {
+		metrics.SpecRequestFailureCount.WithLabelValues(spec.Path).Inc()
+		return errors.WithMessage(err, "failed getting remote")
+	}
+
 	if spec.renewalForced {
 		updateReason = "key"
 		err = errors.New("regeneration was forced")
 	} else {
-		currentCA, err = spec.CA.getRemoteCert()
-		if err != nil {
-			metrics.SpecRequestFailureCount.WithLabelValues(spec.Path).Inc()
-			return errors.WithMessage(err, "failed getting remote")
-		}
 
 		if spec.CA.File != nil {
 			var existingCA *x509.Certificate
