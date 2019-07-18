@@ -350,6 +350,11 @@ func (spec *Spec) checkDiskCertKey(ca *x509.Certificate) error {
 		log.Debugf("spec %s: cert failed to be read: %s", spec, err)
 		return err
 	}
+	err = spec.Cert.CheckPermissions()
+	if err != nil {
+		return errors.WithMessage(err, "cert requires regeneration due to permissions")
+	}
+
 	// update our internal time tracking while we're in here; even if immediately discard it,
 	// keeping it accurate to when we last saw it is desirable for metrics.
 	spec.updateCertExpiry(existingCert.NotAfter)
@@ -359,6 +364,12 @@ func (spec *Spec) checkDiskCertKey(ca *x509.Certificate) error {
 		log.Debugf("spec %s: key failed to be read: %s", spec, err)
 		return err
 	}
+
+	err = spec.Key.CheckPermissions()
+	if err != nil {
+		return errors.WithMessage(err, "key requires regeneration due to permissions")
+	}
+
 	err = verifyCertChain(ca, existingCert)
 	if err != nil {
 		log.Debugf("spec %s: CA has changed, cert is no longer valid via it: %s", spec, err)
@@ -414,7 +425,12 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 				updateReason = "CA"
 			} else {
 				spec.updateCAExpiry(existingCA.NotAfter)
-				if !existingCA.Equal(currentCA) {
+
+				err = spec.CA.File.CheckPermissions()
+				if err != nil {
+					err = errors.WithMessage(err, "CA permissions have changed")
+					updateReason = "CA"
+				} else if !existingCA.Equal(currentCA) {
 					err = errors.New("on disk CA is no longer equal to new CA")
 					updateReason = "CA"
 				}
