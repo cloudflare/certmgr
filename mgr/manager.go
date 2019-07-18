@@ -1,7 +1,7 @@
 package mgr
 
 import (
-	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/cloudflare/certmgr/cert"
 	"github.com/cloudflare/certmgr/metrics"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v2"
 )
@@ -48,6 +49,10 @@ type Manager struct {
 
 	// isLoaded tracks if we've loaded from disk already
 	isLoaded bool
+
+	// managedPaths tracks the paths managed by specs.  This is used to prevent
+	// multiple specs from managing the same path
+	managedPaths map[string]*cert.Spec
 }
 
 // UnmarshallYAML update a Manager instance via deserializing the given yaml
@@ -80,6 +85,7 @@ func NewFromConfig(configPath string) (*Manager, error) {
 	if err != nil {
 		err = m.validate()
 	}
+	m.managedPaths = make(map[string]*cert.Spec)
 	return m, err
 }
 
@@ -92,6 +98,7 @@ func New(dir string, remote string, svcmgr string, before time.Duration, interva
 		ServiceManager: svcmgr,
 		Before:         before,
 		Interval:       interval,
+		managedPaths:   make(map[string]*cert.Spec),
 	}
 
 	return m, m.validate()
@@ -132,6 +139,29 @@ func (m *Manager) loadSpec(path string) (*cert.Spec, error) {
 	return spec, err
 }
 
+// updateManagedPaths updates the internal bookkeeping of managed paths, rejecting
+// the passed in spec if it wishes to manage a path already managed by another spec
+// This invocation is transactional; the paths are added only if there is no conflict.
+func (m *Manager) updateManagedPaths(oldSpec *cert.Spec, newSpec *cert.Spec) error {
+	paths := newSpec.Paths()
+	for idx := range paths {
+		if preexisting, ok := m.managedPaths[paths[idx]]; ok && preexisting != oldSpec {
+			return fmt.Errorf("pathway %s is already managed by spec %s", paths[idx], preexisting)
+		}
+	}
+
+	if oldSpec != nil {
+		for _, path := range oldSpec.Paths() {
+			delete(m.managedPaths, path)
+		}
+	}
+
+	for idx := range paths {
+		m.managedPaths[paths[idx]] = newSpec
+	}
+	return nil
+}
+
 // Load reads the certificate specs from the spec directory.
 func (m *Manager) Load() error {
 	if m.isLoaded {
@@ -139,6 +169,7 @@ func (m *Manager) Load() error {
 	}
 
 	m.Certs = make([]*cert.Spec, 0)
+
 	log.Info("manager: loading certificates from ", m.Dir)
 	walker := func(path string, info os.FileInfo, err error) error {
 		if info == nil {
@@ -161,6 +192,11 @@ func (m *Manager) Load() error {
 		if err != nil {
 			log.Errorf("stopping directory scan due to %s", err)
 			return err
+		}
+
+		err = m.updateManagedPaths(nil, spec)
+		if err != nil {
+			return errors.WithMessagef(err, "while loading spec %s", spec)
 		}
 
 		m.Certs = append(m.Certs, spec)
@@ -226,6 +262,14 @@ func (m *Manager) Server() {
 					log.Errorf("failed to reload spec %s due to %s. Continuing to use old spec.", spec, err)
 					continue
 				}
+
+				// ensure the pathing doesn't conflict
+				err = m.updateManagedPaths(spec, newSpec)
+				if err != nil {
+					log.Errorf("failed to reload spec %s due to %s.  Continuing to use old spec", spec, err)
+					continue
+				}
+
 				// ensure we don't leave any stale metrics hanging around.
 				spec.WipeMetrics()
 				log.Infof("reloaded spec %s due to detected changes", spec)
