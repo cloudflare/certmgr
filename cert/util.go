@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net"
 	"sort"
 	"strings"
 )
@@ -51,14 +52,31 @@ func displayName(name pkix.Name) string {
 }
 
 // Compare if hostnames in certificate and spec are equal
-func hostnamesEquals(a, b []string) bool {
+func hostnamesMatchesCertificate(hosts []string, cert *x509.Certificate) bool {
+	a := make([]string, len(hosts))
+	for idx := range hosts {
+		// normalize the IPs.
+		ip := net.ParseIP(hosts[idx])
+		if ip == nil {
+			a[idx] = hosts[idx]
+		} else {
+			a[idx] = ip.String()
+		}
+	}
+	b := make([]string, len(cert.DNSNames), len(cert.DNSNames)+len(cert.IPAddresses))
+	copy(b, cert.DNSNames)
+	for idx := range cert.IPAddresses {
+		b = append(b, cert.IPAddresses[idx].String())
+	}
+
 	if len(a) != len(b) {
 		return false
 	}
+
 	sort.Strings(a)
 	sort.Strings(b)
-	for i, v := range a {
-		if v != b[i] {
+	for idx := range a {
+		if a[idx] != b[idx] {
 			return false
 		}
 	}
