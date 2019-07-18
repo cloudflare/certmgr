@@ -87,6 +87,19 @@ func (spec *Spec) String() string {
 	return spec.Path
 }
 
+// Paths returns the paths that this spec is responsible for on disk
+func (spec *Spec) Paths() []string {
+	x := []string{}
+	if spec.CA.File != nil {
+		x = append(x, spec.CA.File.Path)
+	}
+	if spec.Cert != nil {
+		x = append(x, spec.Cert.Path)
+		x = append(x, spec.Key.Path)
+	}
+	return x
+}
+
 // Identity creates a transport package identity for the certificate.
 func (spec *Spec) identity() (*core.Identity, error) {
 	ident := &core.Identity{
@@ -184,6 +197,16 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 
 	if spec.Cert == nil && spec.CA.File == nil {
 		return nil, errors.New("spec doesn't define either a CA, or keypair to write to disk")
+	}
+
+	// ensure the spec doesn't point the CA/key/cert at the same files.  And yes, this is quadratic- it's limited to max 3 however.
+	paths := spec.Paths()
+	for idx := range paths {
+		for subidx := range paths {
+			if idx != subidx && paths[idx] == paths[subidx] {
+				return nil, fmt.Errorf("spec path for PKI material to manage on disk isn't unique for cert/key/CA aren't unique for value %s", paths[idx])
+			}
+		}
 	}
 
 	identity, err := spec.identity()
