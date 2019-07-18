@@ -290,7 +290,7 @@ func (spec *Spec) checkDiskPKI(cert *x509.Certificate, keyData []byte) error {
 		return fmt.Errorf("subject has changed: was %s, now is %s", cert.Subject, csrRequest.Name())
 	}
 
-	if !hostnamesEquals(csrRequest.Hosts, cert.DNSNames) {
+	if !hostnamesMatchesCertificate(csrRequest.Hosts, cert) {
 		return errors.New("DNS names in cert on disk don't match with hostnames in spec")
 	}
 
