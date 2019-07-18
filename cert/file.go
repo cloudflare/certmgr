@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/user"
 	"path"
 	"regexp"
 	"strconv"
+	"syscall"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -126,25 +128,31 @@ func (f *File) parse() (err error) {
 	return nil
 }
 
-// Set ensures the file has the right owner/group and mode.
-func (f *File) setPermissions() error {
+// CheckPermissions checks that the permissions on disk match what we intend.  If the
+// file doesn't exist, then the raw error for stat is returned.
+func (f *File) CheckPermissions() error {
 	st, err := os.Stat(f.Path)
 	if err != nil {
 		return err
 	}
 
-	err = os.Chown(f.Path, f.uid, f.gid)
-	if err != nil {
-		return err
-	}
-
 	if st.Mode() != f.mode {
-		err = os.Chmod(f.Path, f.mode)
-		if err != nil {
-			return err
-		}
+		return fmt.Errorf("mode has changed from %s to %s", f.mode, st.Mode())
 	}
 
+	unixStat, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		// yes, this is noisy on windows.  Don't think we have windows users however...
+		log.Warningf("Certmgr doesn't know how to verify ownership for %s", f.Path)
+		return nil
+	}
+
+	if unixStat.Uid != uint32(f.uid) {
+		return fmt.Errorf("uid has changed from %d to %d", uint32(f.uid), unixStat.Uid)
+	}
+	if unixStat.Gid != uint32(f.gid) {
+		return fmt.Errorf("uid has changed from %d to %d", uint32(f.uid), unixStat.Gid)
+	}
 	return nil
 }
 
