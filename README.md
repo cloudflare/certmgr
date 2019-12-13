@@ -164,6 +164,10 @@ A certificate spec has the following fields:
 * `private_key` and `certificate`: file specifications (see below) for
   the private key and certificate.  Both must be specified- as must `request`- if you wish to manage a certificate/key pair.
 * `authority`: contains the CFSSL CA configuration (see below).
+* `before`: optional, this is a time.Duration of how early to pre-emptively renew a certificate before it's expiry.
+   If unspecified, then the manager's default is used instead (and if that is unspecified, it defaults to 72h).
+* `interval`: optional, this is the time.Duration of how long to sleep for before checking a spec's on disk PKI and CA to see
+   if anything has changed.  If unspecified, the manager default is used (and if that is unspecified, it defaults to an hour).
 
 **Note**: `certmgr` will throw a warning if `svcmgr` is `dummy` _AND_ `action` is "nop" or undefined. This is because such a setup will not properly restart or reload a service upon certiifcate renewal, which will likely cause your service to crash. Running `certmgr` with the `--strict` flag will not even load a certificate spec with a `dummy svcmgr` and undefined/nop `action` configuration.
 

@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cloudflare/certmgr/cert"
 	"github.com/cloudflare/certmgr/metrics"
 	"github.com/cloudflare/certmgr/mgr"
 	"github.com/cloudflare/certmgr/svcmgr"
@@ -37,10 +38,12 @@ var manager struct {
 func newManager() (*mgr.Manager, error) {
 	return mgr.New(
 		viper.GetString("dir"),
-		viper.GetString("default_remote"),
-		viper.GetString("svcmgr"),
-		viper.GetDuration("before"),
-		viper.GetDuration("interval"),
+		&cert.SpecOptions{
+			Remote:             viper.GetString("default_remote"),
+			ServiceManagerName: viper.GetString("svcmgr"),
+			Before:             viper.GetDuration("before"),
+			Interval:           viper.GetDuration("interval"),
+		},
 	)
 }
 

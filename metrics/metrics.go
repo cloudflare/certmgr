@@ -9,9 +9,9 @@ import (
 	_ "net/http/pprof" // start a pprof endpoint
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	log "github.com/sirupsen/logrus"
 )
 
 const metricsNamespace = "certmgr"
@@ -130,14 +130,15 @@ var (
 		[]string{"spec_path"},
 	)
 
-	// ManagerInterval is set to the interval at which a cert manager wakes up and does its checks
-	ManagerInterval = prometheus.NewGaugeVec(
+	// SpecInterval is set to the interval at which a cert manager wakes up and does its checks
+	SpecInterval = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricsNamespace,
-			Name:      "manager_interval_seconds",
-			Help:      "the time interval that manager wakes up and does checks",
+			Subsystem: "spec",
+			Name:      "interval_seconds",
+			Help:      "the time interval that this spec will sleep for between checks",
 		},
-		[]string{"directory"},
+		[]string{"spec_path"},
 	)
 
 	// ActionAttemptedCount counts actions taken by a spec
@@ -174,7 +175,7 @@ func init() {
 	prometheus.MustRegister(SpecWriteCount)
 	prometheus.MustRegister(SpecWriteFailureCount)
 	prometheus.MustRegister(SpecRequestFailureCount)
-	prometheus.MustRegister(ManagerInterval)
+	prometheus.MustRegister(SpecInterval)
 	prometheus.MustRegister(ActionAttemptedCount)
 	prometheus.MustRegister(ActionFailedCount)
 }

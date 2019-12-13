@@ -3,6 +3,7 @@
 package cert
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -20,6 +21,7 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/cloudflare/certmgr/metrics"
 	"github.com/cloudflare/certmgr/svcmgr"
+	"github.com/cloudflare/certmgr/util"
 	"github.com/cloudflare/cfssl/csr"
 	"github.com/cloudflare/cfssl/transport"
 	"github.com/cloudflare/cfssl/transport/core"
@@ -29,15 +31,65 @@ import (
 // These are defaults used for limiting the backoff logic for cfssl transport
 const backoffMaxDelay = time.Minute * 2
 
-// A Spec contains information needed to monitor and renew a
-// certificate.
-type Spec struct {
+//
+// DefaultInterval is used if no duration is provided for a
+// Manager. This defaults to one hour.
+const DefaultInterval = time.Hour
 
+// DefaultBefore is used if no duration is provided for a
+// Manager. This defaults to 72 hours.
+const DefaultBefore = time.Hour * 72
+
+// SpecOptions is a struct used for holding defaults used for instantiating a spec.
+type SpecOptions struct {
 	// This defines the service manager to use.  This should be defined
 	// globally rather than per cert- it's allowed here to allow cert
 	// definitions to use a servicemanager of 'command' to allow freeform
 	// invocations.
 	ServiceManagerName string `json:"svcmgr" yaml:"svcmgr"`
+
+	// Before is how long before the cert expires to start
+	// attempting to renew it.  If unspecified, the manager default is used.
+	Before time.Duration
+
+	// Interval is how often to update the NextExpires metric.
+	Interval time.Duration
+
+	// Remote is shorthand for updating CA.Remote for instantiation.
+	// This specifies the remote upstream to talk to.
+	Remote string `json:"remote" yaml:"remote"`
+}
+
+// ParsableSpecOptions is a struct that supports full deserialization of SpecOptions including time.Duration
+// fields (which <go-2 doesn't support, but yaml.v2 mostly does)
+// Clients should use this struct for unmarshall invocations, and do a .Finalize() invocation to backfill the SpecOptions.
+type ParsableSpecOptions struct {
+	SpecOptions
+
+	// ParseBefore is how long before the cert expires to start
+	// attempting to renew it.  If unspecified, the manager default is used.
+	ParsedBefore util.ParsableDuration `json:"before" yaml:"before"`
+
+	// ParsedInterval is how often to update the NextExpires metric.
+	ParsedInterval util.ParsableDuration `json:"interval" yaml:"interval"`
+}
+
+// FinalizeSpecOptionParsing backfills the embedded SpecOptions structure with values parsed during unmarshall'ing.
+// This should be invoked before you pass SpecOptions to other consumers.
+// If you've created your SpecOptions directly, then you can (and should) ignore this method.
+func (p *ParsableSpecOptions) FinalizeSpecOptionParsing() {
+	if p.ParsedBefore != 0 {
+		p.Before = time.Duration(p.ParsedBefore)
+	}
+	if p.ParsedInterval != 0 {
+		p.Interval = time.Duration(p.ParsedInterval)
+	}
+}
+
+// A Spec contains information needed to monitor and renew a
+// certificate.
+type Spec struct {
+	ParsableSpecOptions
 
 	serviceManager svcmgr.Manager
 
@@ -177,14 +229,30 @@ func (spec *Spec) loadFromPath(path string) error {
 }
 
 // Load reads a spec from a JSON configuration file.
-func Load(path, remote string, before time.Duration, defaultServiceManager string) (*Spec, error) {
+func Load(path string, defaults *SpecOptions) (*Spec, error) {
 	var spec = &Spec{
 		Request: csr.New(),
 	}
-	spec.CA.Remote = remote
+	if defaults != nil {
+		spec.SpecOptions = *defaults
+	}
+	if spec.Before == 0 {
+		spec.Before = DefaultBefore
+	}
+	if spec.Interval == 0 {
+		spec.Interval = DefaultInterval
+	}
+
 	err := spec.loadFromPath(path)
 	if err != nil {
 		return nil, err
+	}
+
+	// transfer the parsed durations into their final resting spot.
+	spec.FinalizeSpecOptionParsing()
+
+	if spec.CA.Remote == "" {
+		spec.CA.Remote = spec.Remote
 	}
 
 	if spec.CA.Remote == "" {
@@ -213,21 +281,10 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 	if err != nil {
 		return nil, err
 	}
-	spec.tr, err = transport.New(before, identity)
+
+	spec.tr, err = transport.New(spec.Before, identity)
 	if err != nil {
 		return nil, err
-	}
-
-	// if no service manager was explicitly defined, use default if
-	// no action/service is defined; else use the default.
-	// If the default is not a dummy, it'll throw an error- which is desired
-	// since that means the spec has a broken notification definition.
-	if spec.ServiceManagerName == "" {
-		spec.ServiceManagerName = defaultServiceManager
-		if spec.Action == "" && spec.Service == "" {
-			log.Warningf("spec %s defines no action, thus cannot not be notified of PKI changes", path)
-			spec.ServiceManagerName = "dummy"
-		}
 	}
 
 	spec.serviceManager, err = svcmgr.New(spec.ServiceManagerName, spec.Action, spec.Service)
@@ -235,7 +292,6 @@ func Load(path, remote string, before time.Duration, defaultServiceManager strin
 		return nil, errors.WithMessagef(err, "while parsing spec")
 	}
 
-	metrics.SpecExpiresBeforeThreshold.WithLabelValues(spec.Path).Set(float64(before.Seconds()))
 	return spec, nil
 }
 
@@ -248,21 +304,20 @@ func (spec *Spec) Lifespan() time.Duration {
 	return time.Now().Sub(t)
 }
 
-// HasChangedOnDisk returns (removed, changed, err) to indicate if the spec has changed
-func (spec *Spec) HasChangedOnDisk() (bool, bool, error) {
+// warnIfHasChangedOnDisk logs warnings if the spec in memory doesn't reflect what's on disk.
+func (spec *Spec) warnIfHasChangedOnDisk() {
 	specStat, err := os.Stat(spec.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Debugf("spec %s was removed from on disk", spec)
-			return true, false, nil
+			log.Warningf("spec %s was removed from on disk", spec)
+		} else {
+			log.Warningf("spec %s failed to be checked on disk: %s", spec, err)
 		}
-		return false, false, err
 	} else if specStat.ModTime().After(spec.loadTime) {
-		log.Debugf("spec %s has changed on disk", spec)
-		return false, true, nil
+		log.Warningf("spec %s has changed on disk", spec)
+	} else {
+		log.Debugf("spec %s hasn't changed on disk", spec)
 	}
-	log.Debugf("spec %s hasn't changed on disk", spec)
-	return false, false, nil
 }
 
 // checkDiskPKI checks the PKI information on disk against cert spec and alerts upon differences
@@ -604,6 +659,7 @@ func (spec *Spec) WipeMetrics() {
 	metrics.SpecRefreshCount.DeleteLabelValues(spec.Path)
 	metrics.SpecCheckCount.DeleteLabelValues(spec.Path)
 	metrics.SpecExpiresBeforeThreshold.DeleteLabelValues(spec.Path)
+	metrics.SpecInterval.DeleteLabelValues(spec.Path)
 	metrics.SpecWriteCount.DeleteLabelValues(spec.Path)
 	metrics.SpecWriteFailureCount.DeleteLabelValues(spec.Path)
 	metrics.SpecRequestFailureCount.DeleteLabelValues(spec.Path)
@@ -611,5 +667,39 @@ func (spec *Spec) WipeMetrics() {
 		metrics.SpecExpires.DeleteLabelValues(spec.Path, t)
 		metrics.ActionAttemptedCount.DeleteLabelValues(spec.Path, t)
 		metrics.ActionFailedCount.DeleteLabelValues(spec.Path, t)
+	}
+}
+
+// Run starts monitoring and enforcement of this spec's on disk PKI.
+func (spec *Spec) Run(ctx context.Context) {
+	// initialize our run metrics.  At this point an observer knows this spec is 'alive' and being enforced.
+	metrics.SpecExpiresBeforeThreshold.WithLabelValues(spec.Path).Set(float64(spec.Before.Seconds()))
+	metrics.SpecInterval.WithLabelValues(spec.Path).Set(float64(spec.Interval.Seconds()))
+
+	// cleanup our runtime metrics on the way out so the observer knows we're no longer enforcing.
+	defer spec.WipeMetrics()
+
+	log.Infof("spec: monitoring %s, waking every %s, starting renewal at %s before expiry", spec, spec.Interval, spec.Before)
+	err := spec.EnforcePKI(true)
+	if err != nil {
+		log.Errorf("spec %s: failed doing initial validation due to %s", spec, err)
+	}
+	for {
+		select {
+		case <-time.After(spec.Interval):
+			log.Debugf("spec %s: woke, starting enforcement", spec)
+			// log notifications if we're out of sync with disk; operator has to handle this, we can't
+			// make the decision
+			spec.warnIfHasChangedOnDisk()
+
+			err := spec.EnforcePKI(true)
+			if err != nil {
+				log.Errorf("failed processing %s due to %s", spec, err)
+			}
+			log.Debugf("spec %s: sleeping, re-waking in %s", spec, spec.Interval)
+		case <-ctx.Done():
+			log.Debugf("spec %s: stopping monitoring due to %s", spec, ctx.Err())
+			return
+		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/cloudflare/certmgr/cert"
@@ -23,27 +24,40 @@ const DefaultInterval = time.Hour
 // Manager. This defaults to 72 hours.
 const DefaultBefore = time.Hour * 72
 
+// MgrSpecOptions is a compatibility shim for mapping old manager configurables into
+// the common names used by SpecOptions.
+type MgrSpecOptions struct {
+	cert.ParsableSpecOptions
+
+	// OldServiceManagerField is the old yaml configurable name used for this.
+	OldServiceManagerField string `yaml:"service_manager"`
+
+	// OldRemoteName is the old yaml configurable name used for this.
+	OldRemoteField string `yaml:"default_remote"`
+}
+
+// FinalizeSpecOptionParsing should be invoked to transfer fields from old location names
+// to new location names for compatibility.
+func (m *MgrSpecOptions) FinalizeSpecOptionParsing() {
+	if m.OldServiceManagerField != "" {
+		log.Warning("certmgr manager configuration field `service_manager` is deprecated and will be removed; please use `svcmgr` instead")
+		m.SpecOptions.ServiceManagerName = m.OldServiceManagerField
+	}
+	if m.OldRemoteField != "" {
+		log.Warning("certmgr manager configuration field `default_remote` is deprecated and will be removed; please use `remote` instead")
+		m.SpecOptions.Remote = m.OldRemoteField
+	}
+	m.ParsableSpecOptions.FinalizeSpecOptionParsing()
+}
+
 // The Manager structure contains the certificates to be managed. A
 // manager needs to be constructed with one of the New functions, and
 // should not be constructed by hand.
 type Manager struct {
+	MgrSpecOptions
+
 	// Dir is the directory containing the certificate specs.
 	Dir string `yaml:"certspecs"`
-
-	// DefaultRemote is used as the remote CA server when no
-	// remote is specified.
-	DefaultRemote string `yaml:"default_remote"`
-
-	// ServiceManager is the service manager used to restart a
-	// service.
-	ServiceManager string `yaml:"service_manager"`
-
-	// Before is how long before the cert expires to start
-	// attempting to renew it.
-	Before time.Duration `yaml:"before"`
-
-	// Interval is how often to update the NextExpires metric.
-	Interval time.Duration `yaml:"interval"`
 
 	// Certs contains the list of certificates to manage.
 	Certs []*cert.Spec `yaml:",omitempty"`
@@ -58,16 +72,15 @@ type Manager struct {
 
 // UnmarshallYAML update a Manager instance via deserializing the given yaml
 func (m *Manager) UnmarshallYAML(unmarshall func(interface{}) error) error {
-	m = &Manager{
-		Before:   DefaultBefore,
-		Interval: DefaultInterval,
-	}
+	m = &Manager{}
+
 	// use a cast to prevent unmarshall from going recursive against this
 	// deserializer function.
 	type plain Manager
 	if err := unmarshall((*plain)(m)); err != nil {
 		return err
 	}
+	m.FinalizeSpecOptionParsing()
 	return nil
 }
 
@@ -84,40 +97,33 @@ func NewFromConfig(configPath string) (*Manager, error) {
 	var m = &Manager{}
 	err = yaml.UnmarshalStrict(in, &m)
 	if err != nil {
-		err = m.validate()
+		return nil, err
 	}
+
 	m.managedPaths = make(map[string]*cert.Spec)
-	return m, err
+	return m, nil
 }
 
 // New constructs a new Manager from parameters. It is intended to be
 // used in conjunction with command line flags.
-func New(dir string, remote string, svcmgr string, before time.Duration, interval time.Duration) (*Manager, error) {
+func New(dir string, defaults *cert.SpecOptions) (*Manager, error) {
+	if dir == "" {
+		return nil, errors.New("manager doesn't define a spec dir")
+	}
+	dir = filepath.Clean(dir)
+
 	m := &Manager{
-		Dir:            dir,
-		DefaultRemote:  remote,
-		ServiceManager: svcmgr,
-		Before:         before,
-		Interval:       interval,
-		managedPaths:   make(map[string]*cert.Spec),
+		Dir:          dir,
+		managedPaths: make(map[string]*cert.Spec),
+	}
+	if defaults != nil {
+		m.MgrSpecOptions.SpecOptions = *defaults
+	}
+	if m.MgrSpecOptions.Remote == "" {
+		m.MgrSpecOptions.Remote = "dummy"
 	}
 
-	return m, m.validate()
-}
-
-// setup provides the common final setup work that needs to be done
-// for a Manager to be ready.
-func (m *Manager) validate() error {
-	if m.Dir == "" {
-		return errors.New("manager doesn't define a spec dir")
-	}
-	m.Dir = filepath.Clean(m.Dir)
-
-	if m.ServiceManager == "" {
-		m.ServiceManager = "dummy"
-	}
-
-	return nil
+	return m, nil
 }
 
 var validExtensions = map[string]bool{
@@ -130,9 +136,9 @@ func (m *Manager) loadSpec(path string) (*cert.Spec, error) {
 	log.Infof("manager: loading spec from %s", path)
 	path = filepath.Clean(path)
 	metrics.SpecLoadCount.WithLabelValues(path).Inc()
-	spec, err := cert.Load(path, m.DefaultRemote, m.Before, m.ServiceManager)
+	spec, err := cert.Load(path, &(m.MgrSpecOptions.SpecOptions))
 	if err == nil {
-		log.Debugf("manager: successfully loaded spec from %s", path)
+		log.Debugf("manager: successfully loaded spec from %s with begin %v", path, spec.Before)
 	} else {
 		metrics.SpecLoadFailureCount.WithLabelValues(path).Inc()
 		log.Errorf("managed: failed loading spec from %s: %s", path, err)
@@ -219,64 +225,16 @@ func (m *Manager) Load() error {
 	return nil
 }
 
-// CheckCerts verifies that certificates and keys are present, and
-// refreshes anything needed, while updating the bookkeeping for when
-// next to wake up.
-func (m *Manager) CheckCerts() {
-	log.Info("manager: checking certificates")
-	for _, cert := range m.Certs {
-		log.Debugf("manager: checking %s", cert)
-		err := cert.EnforcePKI(true)
-		if err != nil {
-			log.Errorf("Failed processing %s due to %s", cert, err)
-		}
-	}
-	log.Info("manager: finished checking certificates")
-}
-
 // Server runs the Manager server.
 func (m *Manager) Server(ctx context.Context) {
+	var wg sync.WaitGroup
+	defer wg.Wait()
 
-	metrics.ManagerInterval.WithLabelValues(m.Dir).Set(m.Interval.Seconds())
-
-	m.CheckCerts()
-
-	for {
-		select {
-
-		case <-time.After(m.Interval):
-			m.warnIfSpecsHaveChanged()
-			m.CheckCerts()
-
-		case <-ctx.Done():
-			m.shutdown()
-			return
-		}
-	}
-}
-
-// shutdown shut's down the manager, including metric cleanup
-func (m *Manager) shutdown() {
 	for _, spec := range m.Certs {
-		spec.WipeMetrics() // cleanup the metrics from the specs before we exit
+		wg.Add(1)
+		go func(s *cert.Spec) {
+			defer wg.Done()
+			s.Run(ctx)
+		}(spec)
 	}
-	metrics.ManagerInterval.DeleteLabelValues(m.Dir)
-}
-
-// reloadSpecsIfChanged checks spec's on disk to see if there has been changes, and reloads
-// accordingly.  This behaviour should eventually be eliminated and require users to do an
-// explicit sighup to reload configs, rather than this opportunistic (and potentially ill timed)
-// approach.
-func (m *Manager) warnIfSpecsHaveChanged() {
-	for _, spec := range m.Certs {
-		removed, changed, err := spec.HasChangedOnDisk()
-		if err != nil {
-			log.Errorf("failed checking spec on disk status for %s: %s", spec, err)
-		} else if removed {
-			log.Warningf("spec %s was removed, certmgr requires a reload for this to be effected", spec)
-		} else if changed {
-			log.Warningf("spec %s has changed, certmgr reload is required", spec)
-		}
-	}
-
 }
