@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/cloudflare/certmgr/cert"
 	"github.com/cloudflare/certmgr/metrics"
 	"github.com/cloudflare/certmgr/mgr"
 	"github.com/cloudflare/certmgr/svcmgr"
@@ -41,32 +44,75 @@ func newManager() (*mgr.Manager, error) {
 	)
 }
 
-func root(cmd *cobra.Command, args []string) {
+func createManager() (*mgr.Manager, error) {
 	mgr, err := newManager()
+	if err == nil {
+		if err = mgr.Load(); err == nil {
+			if requireSpecs && len(mgr.Certs) == 0 {
+				err = errors.New("no specs were found, and --requireSpecs was passed")
+			}
+		}
+	}
+
+	return mgr, err
+}
+func root(cmd *cobra.Command, args []string) {
+	currentMgr, err := createManager()
 	if err != nil {
 		log.Fatalf("certmgr: %s", err)
 	}
 
-	err = mgr.Load()
-	if err != nil {
-		log.Fatalf("certmgr: %s", err)
-	}
-
-	if requireSpecs && len(mgr.Certs) == 0 {
-		log.Fatal("certmgr: no specs were found, and --requireSpecs was passed")
-	}
-
-	// bit of a hack- metrics should instead see the mgr
-	// so changes in certs count are properly reflected.
-	certs := []*cert.Spec{}
-	for _, x := range mgr.Certs {
-		certs = append(certs, x)
-	}
 	metrics.Start(
 		viper.GetString("metrics_address"),
 		viper.GetString("metrics_port"),
 	)
-	mgr.Server()
+
+	globalCtx, globalCancel := context.WithCancel(context.Background())
+	defer globalCancel()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	reload := make(chan os.Signal, 1)
+	signal.Notify(reload, syscall.SIGHUP)
+
+	runMgr := func(m *mgr.Manager) (chan struct{}, context.CancelFunc) {
+		stopped := make(chan struct{}, 1)
+		ctx, cancel := context.WithCancel(globalCtx)
+		go func() {
+			defer close(stopped)
+			m.Server(ctx)
+		}()
+		return stopped, cancel
+	}
+
+	currentMgrDone, currentMgrCancel := runMgr(currentMgr)
+Loop:
+	for {
+		select {
+		case <-quit:
+			log.Info("signaled to shutdown")
+			globalCancel()
+		case <-currentMgrDone:
+			log.Info("manager has shutdown, exiting")
+			break Loop
+		case <-reload:
+			log.Info("asked to reload, waiting for manager to shutdown")
+			currentMgrCancel()
+			<-currentMgrDone
+			log.Info("reloading config")
+			newMgr, err := createManager()
+			if err != nil {
+				log.Errorf("reload failed: %s", err)
+				log.Error("continuing to run with old loaded configuration")
+			} else {
+				log.Infof("manager reloaded successfully")
+				currentMgr = newMgr
+			}
+			log.Info("starting manager")
+			currentMgrDone, currentMgrCancel = runMgr(currentMgr)
+		}
+	}
 }
 
 // RootCmd this is our command processor for CLI interactions

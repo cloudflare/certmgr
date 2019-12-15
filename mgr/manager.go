@@ -1,6 +1,7 @@
 package mgr
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -234,49 +235,48 @@ func (m *Manager) CheckCerts() {
 }
 
 // Server runs the Manager server.
-func (m *Manager) Server() {
-	// NB: this loop could be more intelligent; for example,
-	// updating the next expiration independently of checking
-	// certificates.
+func (m *Manager) Server(ctx context.Context) {
 
 	metrics.ManagerInterval.WithLabelValues(m.Dir).Set(m.Interval.Seconds())
 
 	m.CheckCerts()
 
 	for {
-		<-time.After(m.Interval)
+		select {
 
-		for idx, spec := range m.Certs {
-			removed, changed, err := spec.HasChangedOnDisk()
-			if err != nil {
-				log.Errorf("failed checking spec on disk status for %s: %s", spec, err)
-				continue
-			}
-			if removed {
-				log.Warningf("spec %s was removed, certmgr requires a restart", spec)
-				continue
-			}
-			if changed {
-				newSpec, err := m.loadSpec(spec.Path)
-				if err != nil {
-					log.Errorf("failed to reload spec %s due to %s. Continuing to use old spec.", spec, err)
-					continue
-				}
+		case <-time.After(m.Interval):
+			m.warnIfSpecsHaveChanged()
+			m.CheckCerts()
 
-				// ensure the pathing doesn't conflict
-				err = m.updateManagedPaths(spec, newSpec)
-				if err != nil {
-					log.Errorf("failed to reload spec %s due to %s.  Continuing to use old spec", spec, err)
-					continue
-				}
-
-				// ensure we don't leave any stale metrics hanging around.
-				spec.WipeMetrics()
-				log.Infof("reloaded spec %s due to detected changes", spec)
-				m.Certs[idx] = newSpec
-			}
+		case <-ctx.Done():
+			m.shutdown()
+			return
 		}
-
-		m.CheckCerts()
 	}
+}
+
+// shutdown shut's down the manager, including metric cleanup
+func (m *Manager) shutdown() {
+	for _, spec := range m.Certs {
+		spec.WipeMetrics() // cleanup the metrics from the specs before we exit
+	}
+	metrics.ManagerInterval.DeleteLabelValues(m.Dir)
+}
+
+// reloadSpecsIfChanged checks spec's on disk to see if there has been changes, and reloads
+// accordingly.  This behaviour should eventually be eliminated and require users to do an
+// explicit sighup to reload configs, rather than this opportunistic (and potentially ill timed)
+// approach.
+func (m *Manager) warnIfSpecsHaveChanged() {
+	for _, spec := range m.Certs {
+		removed, changed, err := spec.HasChangedOnDisk()
+		if err != nil {
+			log.Errorf("failed checking spec on disk status for %s: %s", spec, err)
+		} else if removed {
+			log.Warningf("spec %s was removed, certmgr requires a reload for this to be effected", spec)
+		} else if changed {
+			log.Warningf("spec %s has changed, certmgr reload is required", spec)
+		}
+	}
+
 }
