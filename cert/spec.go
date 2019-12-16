@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,6 +56,15 @@ type SpecOptions struct {
 	// Interval is how often to update the NextExpires metric.
 	Interval time.Duration
 
+	// IntervalSplay is a randomized Duration between 0 and IntervalSplay that is added to each interval
+	// to distribute client load across time.  The bounding of a clients wake is [Interval, Interval + IntervalSplay]
+	IntervalSplay time.Duration
+
+	// InitialSplay is a randomized Duration between [0, InitialSplay] to sleep after the first PKI check.
+	// This is Primarily useful to force an initial randomization if many ndoes with certmgr are restarted all
+	// at the same time.
+	InitialSplay time.Duration
+
 	// Remote is shorthand for updating CA.Remote for instantiation.
 	// This specifies the remote upstream to talk to.
 	Remote string `json:"remote" yaml:"remote"`
@@ -62,16 +72,22 @@ type SpecOptions struct {
 
 // ParsableSpecOptions is a struct that supports full deserialization of SpecOptions including time.Duration
 // fields (which <go-2 doesn't support, but yaml.v2 mostly does)
-// Clients should use this struct for unmarshall invocations, and do a .Finalize() invocation to backfill the SpecOptions.
+// Clients should use this struct for unmarshall invocations, and do a .FinalizeSpecOptionParsing()
+// invocation to backfill the SpecOptions.
 type ParsableSpecOptions struct {
 	SpecOptions
 
-	// ParseBefore is how long before the cert expires to start
-	// attempting to renew it.  If unspecified, the manager default is used.
+	// ParsedBefore is used to update the SpecOptions.Before field.
 	ParsedBefore util.ParsableDuration `json:"before" yaml:"before"`
 
-	// ParsedInterval is how often to update the NextExpires metric.
+	// ParsedInterval is used to update the SpecOptions.Interval field.
 	ParsedInterval util.ParsableDuration `json:"interval" yaml:"interval"`
+
+	// ParsedIntervalSplay is used to update the SpecOptions.IntervalSplay field.
+	ParsedIntervalSplay util.ParsableDuration `json:"interval_splay" yaml:"interval_splay"`
+
+	// ParsedInitialSplay is used to update the SpecOptions.InitialSplay field.
+	ParsedInitialSplay util.ParsableDuration `json:"initial_splay" yaml:"initial_splay"`
 }
 
 // FinalizeSpecOptionParsing backfills the embedded SpecOptions structure with values parsed during unmarshall'ing.
@@ -83,6 +99,12 @@ func (p *ParsableSpecOptions) FinalizeSpecOptionParsing() {
 	}
 	if p.ParsedInterval != 0 {
 		p.Interval = time.Duration(p.ParsedInterval)
+	}
+	if p.ParsedIntervalSplay != 0 {
+		p.IntervalSplay = time.Duration(p.ParsedIntervalSplay)
+	}
+	if p.ParsedInitialSplay != 0 {
+		p.InitialSplay = time.Duration(p.ParsedInitialSplay)
 	}
 }
 
@@ -674,19 +696,26 @@ func (spec *Spec) WipeMetrics() {
 func (spec *Spec) Run(ctx context.Context) {
 	// initialize our run metrics.  At this point an observer knows this spec is 'alive' and being enforced.
 	metrics.SpecExpiresBeforeThreshold.WithLabelValues(spec.Path).Set(float64(spec.Before.Seconds()))
-	metrics.SpecInterval.WithLabelValues(spec.Path).Set(float64(spec.Interval.Seconds()))
 
 	// cleanup our runtime metrics on the way out so the observer knows we're no longer enforcing.
 	defer spec.WipeMetrics()
 
-	log.Infof("spec: monitoring %s, waking every %s, starting renewal at %s before expiry", spec, spec.Interval, spec.Before)
 	err := spec.EnforcePKI(true)
 	if err != nil {
-		log.Errorf("spec %s: failed doing initial validation due to %s", spec, err)
+		log.Errorf("spec %s: continuing despite failed initial validation due to %s", spec, err)
+	}
+
+	rng := rand.New(rand.NewSource(time.Now().UTC().UnixNano()))
+	sleepPeriod := spec.Interval
+	if spec.InitialSplay != 0 {
+		sleepPeriod = time.Duration(rng.Float64() * float64(spec.InitialSplay.Nanoseconds()))
+		log.Infof("spec %s: initial splay will be used.", spec)
 	}
 	for {
+		log.Infof("spec %s: Next check will be in %s", spec, sleepPeriod)
+		metrics.SpecInterval.WithLabelValues(spec.Path).Set(float64(sleepPeriod.Seconds()))
 		select {
-		case <-time.After(spec.Interval):
+		case <-time.After(sleepPeriod):
 			log.Debugf("spec %s: woke, starting enforcement", spec)
 			// log notifications if we're out of sync with disk; operator has to handle this, we can't
 			// make the decision
@@ -696,7 +725,12 @@ func (spec *Spec) Run(ctx context.Context) {
 			if err != nil {
 				log.Errorf("failed processing %s due to %s", spec, err)
 			}
-			log.Debugf("spec %s: sleeping, re-waking in %s", spec, spec.Interval)
+			sleepPeriod = spec.Interval
+			if spec.IntervalSplay != 0 {
+				i := sleepPeriod.Nanoseconds()
+				i += int64(rng.Float64() * float64(spec.IntervalSplay.Nanoseconds()))
+				sleepPeriod = time.Duration(int64(i))
+			}
 		case <-ctx.Done():
 			log.Debugf("spec %s: stopping monitoring due to %s", spec, ctx.Err())
 			return
