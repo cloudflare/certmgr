@@ -63,10 +63,17 @@ This contains all of the currently available parameters:
   `sysv` (using `service`), `circus` (using `circusctl`), `openrc` (using `rc-service`),
   `dummy` (no restart/reload behavior), or `command` (see the command svcmgr section
   for details of how to use this).
-* `before`: this is the interval before a certificate expires to start
-  attempting to renew it.
-* `interval`: this controls how often `certmgr` will check certificate expirations
-  and update PKI material on disk upon any changes (if necessary).
+* `before`: optional: this is the default duration before a certificate expiry that certmgr starts attempting to
+  renew PKI.  This defaults to 72 hours.
+* `interval`: optional: this is the default for how often `certmgr` will check certificate expirations
+  and update PKI material on disk upon any changes (if necessary).  This defaults to one hour.
+* `interval_splay`: optional: this is used to vary the interval period.  A random time between 0
+  and this value is added to `interval` if specified.  This defaults to 0.
+* `initial_splay`: if specified, a random sleep period between 0 and this value is used
+  for the initial sleep after startup of a spec.  This provides a way to ensure that
+  if a fleet of certmgr are restarted at the same time, their period of wakeup is randomized
+  to avoid said fleet waking up and doing interval checks at the same time for a given spec.
+  This defaults to 0.
 * `metrics_address`: specifies the address for the Prometheus HTTP
   endpoint.
 * `metrics_port`: specifies the port for the Prometheus HTTP endpoint.
@@ -164,10 +171,20 @@ A certificate spec has the following fields:
 * `private_key` and `certificate`: file specifications (see below) for
   the private key and certificate.  Both must be specified- as must `request`- if you wish to manage a certificate/key pair.
 * `authority`: contains the CFSSL CA configuration (see below).
-* `before`: optional, this is a time.Duration of how early to pre-emptively renew a certificate before it's expiry.
-   If unspecified, then the manager's default is used instead (and if that is unspecified, it defaults to 72h).
-* `interval`: optional, this is the time.Duration of how long to sleep for before checking a spec's on disk PKI and CA to see
-   if anything has changed.  If unspecified, the manager default is used (and if that is unspecified, it defaults to an hour).
+* `before`: optional: this is the default duration before a certificate expiry that certmgr starts attempting to
+  renew PKI.  This defaults to the managers default, which defaults to 72 hours if unspecified.
+* `interval`: optional: this is the default for how often `certmgr` will check certificate expirations
+  and update PKI material on disk upon any changes (if necessary).  This defaults to the managers default, which
+  defaults to one hour if unspecified.
+* `interval_splay`: optional: this is used to vary the interval period.  A random time between 0
+  and this value is added to `interval` if specified.  This defaults to the managers default, which defaults to 0
+  if unspecified.
+* `initial_splay`: if specified, a random sleep period between 0 and this value is used
+  for the initial sleep after startup of a spec.  This provides a way to ensure that
+  if a fleet of certmgr are restarted at the same time, their period of wakeup is randomized
+  to avoid said fleet waking up and doing interval checks at the same time for a given spec.
+  This defaults to the managers default, which defaults to 0 if unspecified.
+
 
 **Note**: `certmgr` will throw a warning if `svcmgr` is `dummy` _AND_ `action` is "nop" or undefined. This is because such a setup will not properly restart or reload a service upon certiifcate renewal, which will likely cause your service to crash. Running `certmgr` with the `--strict` flag will not even load a certificate spec with a `dummy svcmgr` and undefined/nop `action` configuration.
 
