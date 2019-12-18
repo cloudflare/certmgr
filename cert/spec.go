@@ -20,7 +20,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/cenkalti/backoff"
-	"github.com/cloudflare/certmgr/metrics"
 	"github.com/cloudflare/certmgr/svcmgr"
 	"github.com/cloudflare/certmgr/util"
 	"github.com/cloudflare/cfssl/csr"
@@ -481,11 +480,11 @@ func (spec *Spec) EnforcePKI(enableActions bool) error {
 	var currentCA *x509.Certificate
 	var err error
 
-	metrics.SpecCheckCount.WithLabelValues(spec.Path).Inc()
+	SpecCheckCount.WithLabelValues(spec.Path).Inc()
 
 	currentCA, err = spec.CA.getRemoteCert()
 	if err != nil {
-		metrics.SpecRequestFailureCount.WithLabelValues(spec.Path).Inc()
+		SpecRequestFailureCount.WithLabelValues(spec.Path).Inc()
 		return errors.WithMessage(err, "failed getting remote")
 	}
 
@@ -569,10 +568,10 @@ func (spec *Spec) takeAction(changeType string) error {
 	if spec.CA.File != nil {
 		caPath = spec.CA.File.Path
 	}
-	metrics.ActionAttemptedCount.WithLabelValues(spec.Path, changeType).Inc()
+	ActionAttemptedCount.WithLabelValues(spec.Path, changeType).Inc()
 	err := spec.serviceManager.TakeAction(changeType, spec.Path, caPath, spec.Cert.Path, spec.Key.Path)
 	if err != nil {
-		metrics.ActionFailedCount.WithLabelValues(spec.Path, changeType).Inc()
+		ActionFailedCount.WithLabelValues(spec.Path, changeType).Inc()
 	}
 	return err
 }
@@ -582,11 +581,11 @@ func (spec *Spec) takeAction(changeType string) error {
 // keypair can be nil if the spec does not write a cert/key- if it's just used for tracking the CA.
 func (spec *Spec) writePKIToDisk(ca *x509.Certificate, keyPair *tls.Certificate) (err error) {
 
-	metrics.SpecWriteCount.WithLabelValues(spec.Path).Inc()
+	SpecWriteCount.WithLabelValues(spec.Path).Inc()
 
 	defer func() {
 		if err != nil {
-			metrics.SpecWriteFailureCount.WithLabelValues(spec.Path).Inc()
+			SpecWriteFailureCount.WithLabelValues(spec.Path).Inc()
 		} else {
 			spec.renewalForced = false
 		}
@@ -628,7 +627,7 @@ func (spec *Spec) writePKIToDisk(ca *x509.Certificate, keyPair *tls.Certificate)
 
 // fetchNewKeyPair request a fresh certificate/key from the transport, backing off as needed.
 func (spec *Spec) fetchNewKeyPair() (*tls.Certificate, error) {
-	metrics.SpecRefreshCount.WithLabelValues(spec.Path).Inc()
+	SpecRefreshCount.WithLabelValues(spec.Path).Inc()
 
 	// use exponential backoff rather than using cfssl's backoff implementation; that implementation
 	// can back off up to an hour before returning control back to the invoker; that isn't
@@ -642,7 +641,7 @@ func (spec *Spec) fetchNewKeyPair() (*tls.Certificate, error) {
 
 			err := spec.tr.RefreshKeys()
 			if err != nil {
-				metrics.SpecRequestFailureCount.WithLabelValues(spec.Path).Inc()
+				SpecRequestFailureCount.WithLabelValues(spec.Path).Inc()
 				if isAuthError(err) {
 					log.Errorf("spec %s: invalid auth key.  Giving up", spec)
 					err = backoff.Permanent(errors.New("invalid auth key"))
@@ -668,34 +667,18 @@ func (spec *Spec) fetchNewKeyPair() (*tls.Certificate, error) {
 
 func (spec *Spec) updateCertExpiry(notAfter time.Time) {
 	spec.expiry.Cert = notAfter
-	metrics.SpecExpires.WithLabelValues(spec.Path, "cert").Set(float64(notAfter.Unix()))
+	SpecExpires.WithLabelValues(spec.Path, "cert").Set(float64(notAfter.Unix()))
 }
 func (spec *Spec) updateCAExpiry(notAfter time.Time) {
 	spec.expiry.CA = notAfter
-	metrics.SpecExpires.WithLabelValues(spec.Path, "ca").Set(float64(notAfter.Unix()))
-}
-
-// WipeMetrics Wipes any metrics that may be recorded for this spec.
-// In general this should be invoked only when a spec is being removed from tracking.
-func (spec *Spec) WipeMetrics() {
-	metrics.SpecRefreshCount.DeleteLabelValues(spec.Path)
-	metrics.SpecCheckCount.DeleteLabelValues(spec.Path)
-	metrics.SpecExpiresBeforeThreshold.DeleteLabelValues(spec.Path)
-	metrics.SpecInterval.DeleteLabelValues(spec.Path)
-	metrics.SpecWriteCount.DeleteLabelValues(spec.Path)
-	metrics.SpecWriteFailureCount.DeleteLabelValues(spec.Path)
-	metrics.SpecRequestFailureCount.DeleteLabelValues(spec.Path)
-	for _, t := range []string{"ca", "cert", "key"} {
-		metrics.SpecExpires.DeleteLabelValues(spec.Path, t)
-		metrics.ActionAttemptedCount.DeleteLabelValues(spec.Path, t)
-		metrics.ActionFailedCount.DeleteLabelValues(spec.Path, t)
-	}
+	SpecExpires.WithLabelValues(spec.Path, "ca").Set(float64(notAfter.Unix()))
 }
 
 // Run starts monitoring and enforcement of this spec's on disk PKI.
 func (spec *Spec) Run(ctx context.Context) {
-	// initialize our run metrics.  At this point an observer knows this spec is 'alive' and being enforced.
-	metrics.SpecExpiresBeforeThreshold.WithLabelValues(spec.Path).Set(float64(spec.Before.Seconds()))
+	// initialize our run   At this point an observer knows this spec is 'alive' and being enforced.
+	SpecExpiresBeforeThreshold.WithLabelValues(spec.Path).Set(float64(spec.Before.Seconds()))
+	SpecWatchCount.WithLabelValues(spec.Path, spec.ServiceManagerName, spec.Action, spec.CA.Label).Inc()
 
 	// cleanup our runtime metrics on the way out so the observer knows we're no longer enforcing.
 	defer spec.WipeMetrics()
@@ -713,7 +696,7 @@ func (spec *Spec) Run(ctx context.Context) {
 	}
 	for {
 		log.Infof("spec %s: Next check will be in %s", spec, sleepPeriod)
-		metrics.SpecInterval.WithLabelValues(spec.Path).Set(float64(sleepPeriod.Seconds()))
+		SpecInterval.WithLabelValues(spec.Path).Set(float64(sleepPeriod.Seconds()))
 		select {
 		case <-time.After(sleepPeriod):
 			log.Debugf("spec %s: woke, starting enforcement", spec)
