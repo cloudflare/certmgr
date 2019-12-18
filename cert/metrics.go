@@ -97,13 +97,13 @@ var (
 		[]string{"spec_path"},
 	)
 
-	// SpecInterval is set to the interval at which a cert manager wakes up and does its checks
-	SpecInterval = prometheus.NewGaugeVec(
+	// SpecNextWake is set to the timestamp of the next wakeup to check and enforce a spec.
+	SpecNextWake = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricsNamespace,
 			Subsystem: "spec",
-			Name:      "interval_seconds",
-			Help:      "the time interval that this spec will sleep for between checks",
+			Name:      "spec_next_wake_timestamp",
+			Help:      "The epoch value of when this spec will next awaken to perform checks",
 		},
 		[]string{"spec_path"},
 	)
@@ -138,7 +138,7 @@ func init() {
 	prometheus.MustRegister(SpecWriteCount)
 	prometheus.MustRegister(SpecWriteFailureCount)
 	prometheus.MustRegister(SpecRequestFailureCount)
-	prometheus.MustRegister(SpecInterval)
+	prometheus.MustRegister(SpecNextWake)
 	prometheus.MustRegister(ActionAttemptedCount)
 	prometheus.MustRegister(ActionFailedCount)
 }
@@ -149,7 +149,7 @@ func (spec *Spec) WipeMetrics() {
 	SpecRefreshCount.DeleteLabelValues(spec.Path)
 	SpecCheckCount.DeleteLabelValues(spec.Path)
 	SpecExpiresBeforeThreshold.DeleteLabelValues(spec.Path)
-	SpecInterval.DeleteLabelValues(spec.Path)
+	SpecNextWake.DeleteLabelValues(spec.Path)
 	SpecWriteCount.DeleteLabelValues(spec.Path)
 	SpecWriteFailureCount.DeleteLabelValues(spec.Path)
 	SpecRequestFailureCount.DeleteLabelValues(spec.Path)
