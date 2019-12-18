@@ -679,7 +679,6 @@ func (spec *Spec) updateCAExpiry(notAfter time.Time) {
 func (spec *Spec) Run(ctx context.Context) {
 	// initialize our run   At this point an observer knows this spec is 'alive' and being enforced.
 	SpecExpiresBeforeThreshold.WithLabelValues(spec.Path).Set(float64(spec.Before.Seconds()))
-	SpecWatchCount.WithLabelValues(spec.Path, spec.ServiceManagerName, spec.Action, spec.CA.Label).Inc()
 
 	// cleanup our runtime metrics on the way out so the observer knows we're no longer enforcing.
 	defer spec.WipeMetrics()
