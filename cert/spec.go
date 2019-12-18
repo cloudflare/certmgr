@@ -669,6 +669,7 @@ func (spec *Spec) updateCertExpiry(notAfter time.Time) {
 	spec.expiry.Cert = notAfter
 	SpecExpires.WithLabelValues(spec.Path, "cert").Set(float64(notAfter.Unix()))
 }
+
 func (spec *Spec) updateCAExpiry(notAfter time.Time) {
 	spec.expiry.CA = notAfter
 	SpecExpires.WithLabelValues(spec.Path, "ca").Set(float64(notAfter.Unix()))
@@ -696,7 +697,7 @@ func (spec *Spec) Run(ctx context.Context) {
 	}
 	for {
 		log.Infof("spec %s: Next check will be in %s", spec, sleepPeriod)
-		SpecInterval.WithLabelValues(spec.Path).Set(float64(sleepPeriod.Seconds()))
+		SpecNextWake.WithLabelValues(spec.Path).Set(float64(time.Now().Add(sleepPeriod).Unix()))
 		select {
 		case <-time.After(sleepPeriod):
 			log.Debugf("spec %s: woke, starting enforcement", spec)
