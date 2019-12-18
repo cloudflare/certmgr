@@ -7,17 +7,6 @@ import (
 const metricsNamespace = "certmgr"
 
 var (
-	// SpecWatchCount counts the number of specs being watched.
-	SpecWatchCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: metricsNamespace,
-			Subsystem: "spec",
-			Name:      "watched_total",
-			Help:      "Number of specs being watched",
-		},
-		[]string{"spec_path", "svcmgr", "action", "ca"},
-	)
-
 	// SpecRefreshCount counts the number of PKI regeneration taken by a spec
 	SpecRefreshCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -130,7 +119,6 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(SpecWatchCount)
 	prometheus.MustRegister(SpecRefreshCount)
 	prometheus.MustRegister(SpecCheckCount)
 	prometheus.MustRegister(SpecExpires)
