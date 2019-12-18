@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/cloudflare/certmgr/cert"
-	"github.com/cloudflare/certmgr/metrics"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v2"
@@ -135,12 +134,10 @@ var validExtensions = map[string]bool{
 func (m *Manager) loadSpec(path string) (*cert.Spec, error) {
 	log.Infof("manager: loading spec from %s", path)
 	path = filepath.Clean(path)
-	metrics.SpecLoadCount.WithLabelValues(path).Inc()
 	spec, err := cert.Load(path, &(m.MgrSpecOptions.SpecOptions))
 	if err == nil {
 		log.Debugf("manager: successfully loaded spec from %s with begin %v", path, spec.Before)
 	} else {
-		metrics.SpecLoadFailureCount.WithLabelValues(path).Inc()
 		log.Errorf("managed: failed loading spec from %s: %s", path, err)
 	}
 	return spec, err
@@ -207,7 +204,6 @@ func (m *Manager) Load() error {
 		}
 
 		m.Certs = append(m.Certs, spec)
-		metrics.SpecWatchCount.WithLabelValues(spec.Path, spec.ServiceManagerName, spec.Action, spec.CA.Label).Inc()
 		return nil
 	}
 
