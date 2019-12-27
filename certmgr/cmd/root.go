@@ -1,4 +1,4 @@
-package cli
+package cmd
 
 import (
 	"context"
@@ -6,15 +6,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/cloudflare/certmgr/cert"
-	"github.com/cloudflare/certmgr/metrics"
-	"github.com/cloudflare/certmgr/mgr"
-	"github.com/cloudflare/certmgr/svcmgr"
+	"github.com/cloudflare/certmgr/cert/storage"
+	"github.com/cloudflare/certmgr/certmgr/metrics"
+	"github.com/cloudflare/certmgr/certmgr/mgr"
 	log "github.com/sirupsen/logrus"
 
 	// needed for ensuring cfssl logs go through logrus
@@ -40,13 +39,15 @@ var manager struct {
 func newManager() (*mgr.Manager, error) {
 	return mgr.New(
 		viper.GetString("dir"),
-		&cert.SpecOptions{
+		&mgr.ParsableSpecOptions{
 			Remote:             viper.GetString("default_remote"),
 			ServiceManagerName: viper.GetString("svcmgr"),
-			Before:             viper.GetDuration("before"),
-			Interval:           viper.GetDuration("interval"),
-			IntervalSplay:      viper.GetDuration("interval.splay"),
-			InitialSplay:       viper.GetDuration("initial.splay"),
+			SpecOptions: cert.SpecOptions{
+				Before:        viper.GetDuration("before"),
+				Interval:      viper.GetDuration("interval"),
+				IntervalSplay: viper.GetDuration("interval.splay"),
+				InitialSplay:  viper.GetDuration("initial.splay"),
+			},
 		},
 	)
 }
@@ -143,14 +144,9 @@ func init() {
 
 	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "f", "", "config file (default is /etc/certmgr/certmgr.yaml)")
 	RootCmd.PersistentFlags().StringVarP(&manager.Dir, "dir", "d", "", "either the directory containing certificate specs, or the path to the spec file you wish to operate on")
-	backends := []string{}
-	for backend := range svcmgr.SupportedBackends {
-		backends = append(backends, backend)
-	}
-	sort.Strings(backends)
-	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", fmt.Sprintf("service manager, must be one of: %s", strings.Join(backends, ", ")))
-	RootCmd.PersistentFlags().DurationVarP(&manager.Before, "before", "t", mgr.DefaultBefore, "how long before certificates expire to start renewing (in duration format)")
-	RootCmd.PersistentFlags().DurationVarP(&manager.Interval, "interval", "i", mgr.DefaultInterval, "how long to sleep before checking for renewal (in duration format)")
+	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", fmt.Sprintf("service manager, must be one of: %s", strings.Join(storage.SupportedServiceBackends, ", ")))
+	RootCmd.PersistentFlags().DurationVarP(&manager.Before, "before", "t", cert.DefaultBefore, "how long before certificates expire to start renewing (in duration format)")
+	RootCmd.PersistentFlags().DurationVarP(&manager.Interval, "interval", "i", cert.DefaultInterval, "how long to sleep before checking for renewal (in duration format)")
 	RootCmd.PersistentFlags().DurationVarP(&manager.IntervalSplay, "interval.splay", "", 0*time.Second, "a rng value of [0..interval.splay] to add to each interval to randomize wake time")
 	RootCmd.PersistentFlags().DurationVarP(&manager.InitialSplay, "initial.splay", "", 0*time.Second, "if specified, this is a rng value of [0..initial.splay] used to randomize the first wake period.  Subsequence wakes use interval configurables.")
 	RootCmd.PersistentFlags().BoolVarP(&jsonLogging, "log.json", "", false, "if passed, logging will be in json")

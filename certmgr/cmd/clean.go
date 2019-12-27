@@ -1,4 +1,4 @@
-package cli
+package cmd
 
 import (
 	"os"
@@ -20,19 +20,9 @@ func clean(cmd *cobra.Command, args []string) {
 
 	var failed bool
 	for _, cert := range mgr.Certs {
-		err := cert.Key.Unlink()
-		if err != nil {
-			log.Errorf("failed to remove the private key for %s (%s)", cert, err)
-			failed = true
-		}
-
-		err = cert.Cert.Unlink()
-		if err != nil {
-			log.Errorf("failed to remove the certificate for %s (%s)", cert, err)
-			failed = true
-		}
-
-		if err == nil {
+		if err := cert.Storage.Wipe(); err != nil {
+			log.Errorf("failed to clean spec %s: %s", cert, err)
+		} else {
 			log.Infof("successfully cleaned %s", cert)
 		}
 	}

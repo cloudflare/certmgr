@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// TestHostnameEquals validates util.hostnameEquals logic
-func TestHostnameMatchCertificate(t *testing.T) {
+// TestCertificateMatchesHostname validates CertificateMatchesHostname logic
+func TestCertificateMatchesHostname(t *testing.T) {
 	assert := func(a, b []string, desired bool) {
 		cert := x509.Certificate{}
 		for idx := range b {
@@ -18,7 +18,7 @@ func TestHostnameMatchCertificate(t *testing.T) {
 				cert.IPAddresses = append(cert.IPAddresses, ip)
 			}
 		}
-		if hostnamesMatchesCertificate(a, &cert) != desired {
+		if CertificateMatchesHostname(a, &cert) != desired {
 			if desired {
 				t.Fatalf("%v != %v", a, b)
 			} else {

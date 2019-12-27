@@ -1,13 +1,13 @@
-package cli
+package cmd
 
 import (
 	"os"
 
+	"github.com/cloudflare/certmgr/cert/storage"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/spf13/cobra"
 )
 
-var ensureTolerance = 3
 var enableActions = false
 var forceRegen = false
 var allowZeroSpecs = false
@@ -35,35 +35,44 @@ func ensure(cmd *cobra.Command, args []string) {
 		log.Fatalf("Failed: No specs were found to process")
 	}
 
-	if ensureTolerance < 1 {
-		ensureTolerance = 1
-	}
-	failedSpecs := 0
+	failedSpecs := false
 	for _, cert := range mgr.Certs {
-		for attempt := ensureTolerance; attempt > 0; attempt-- {
-			if forceRegen {
-				cert.ForceRenewal()
+		if !enableActions {
+			switch t := cert.Storage.(type) {
+			case *storage.FileBackend: // nothing to do here, just noting it for completeness
+			case *storage.FileServiceNotifier:
+				log.Debugf("disabling actions for %s", cert)
+				cert.Storage = t.FileBackend
+			case *storage.FileCommandNotifier:
+				log.Debugf("disabling actions for %s", cert)
+				cert.Storage = t.FileBackend
+			default:
+				log.Errorf("spec %s has a storage backend we do not know how to work with; this is an internal certmgr bug", cert)
+				continue
 			}
-			err = cert.EnforcePKI(enableActions)
-			if err != nil {
-				log.Errorf("Failed processing spec %s due to %s; %d remaining attempts", cert.Path, err, attempt)
-			} else {
-				break
-			}
+		}
+		log.Infof("backend is %s", cert.Storage)
+
+		if forceRegen {
+			err = cert.ForceUpdate()
+		} else {
+			err = cert.UpdateIfNeeded()
 		}
 		if err != nil {
-			failedSpecs++
+			log.Errorf("Failed processing spec %s due to %s", cert, err)
+			failedSpecs = true
 		}
 	}
-	if failedSpecs == 0 {
+	if !failedSpecs {
 		log.Info("processed specs without issue")
+		os.Exit(0)
 	}
-	os.Exit(failedSpecs)
+	log.Error("not all specs were processed successfully")
+	os.Exit(1)
 }
 
 func init() {
 	RootCmd.AddCommand(ensureCmd)
-	ensureCmd.Flags().IntVarP(&ensureTolerance, "tries", "n", ensureTolerance, "number of times to retry refreshing a certificate")
 	ensureCmd.Flags().BoolVarP(&enableActions, "enableActions", "", enableActions, "if passed, run the certificates svcmgr actions; defaults to not running them")
 	ensureCmd.Flags().BoolVarP(&forceRegen, "forceRegen", "", forceRegen, "if passed, ignore TTL checks and force regeneration of all specs")
 	ensureCmd.Flags().BoolVarP(&allowZeroSpecs, "allowZeroSpecs", "0", allowZeroSpecs, "if passed, do not return a nonzero exit code if there were no specs found to process; defaults to failing if nothing is found")

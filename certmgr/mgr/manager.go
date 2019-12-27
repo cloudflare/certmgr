@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/cloudflare/certmgr/cert"
 	"github.com/pkg/errors"
@@ -15,18 +14,10 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
-// DefaultInterval is used if no duration is provided for a
-// Manager. This defaults to one hour.
-const DefaultInterval = time.Hour
-
-// DefaultBefore is used if no duration is provided for a
-// Manager. This defaults to 72 hours.
-const DefaultBefore = time.Hour * 72
-
 // MgrSpecOptions is a compatibility shim for mapping old manager configurables into
 // the common names used by SpecOptions.
 type MgrSpecOptions struct {
-	cert.ParsableSpecOptions
+	ParsableSpecOptions
 
 	// OldServiceManagerField is the old yaml configurable name used for this.
 	OldServiceManagerField string `yaml:"service_manager"`
@@ -40,11 +31,11 @@ type MgrSpecOptions struct {
 func (m *MgrSpecOptions) FinalizeSpecOptionParsing() {
 	if m.OldServiceManagerField != "" {
 		log.Warning("certmgr manager configuration field `service_manager` is deprecated and will be removed; please use `svcmgr` instead")
-		m.SpecOptions.ServiceManagerName = m.OldServiceManagerField
+		m.ServiceManagerName = m.OldServiceManagerField
 	}
 	if m.OldRemoteField != "" {
 		log.Warning("certmgr manager configuration field `default_remote` is deprecated and will be removed; please use `remote` instead")
-		m.SpecOptions.Remote = m.OldRemoteField
+		m.Remote = m.OldRemoteField
 	}
 	m.ParsableSpecOptions.FinalizeSpecOptionParsing()
 }
@@ -105,7 +96,7 @@ func NewFromConfig(configPath string) (*Manager, error) {
 
 // New constructs a new Manager from parameters. It is intended to be
 // used in conjunction with command line flags.
-func New(dir string, defaults *cert.SpecOptions) (*Manager, error) {
+func New(dir string, defaults *ParsableSpecOptions) (*Manager, error) {
 	if dir == "" {
 		return nil, errors.New("manager doesn't define a spec dir")
 	}
@@ -116,10 +107,7 @@ func New(dir string, defaults *cert.SpecOptions) (*Manager, error) {
 		managedPaths: make(map[string]*cert.Spec),
 	}
 	if defaults != nil {
-		m.MgrSpecOptions.SpecOptions = *defaults
-	}
-	if m.MgrSpecOptions.Remote == "" {
-		m.MgrSpecOptions.Remote = "dummy"
+		m.MgrSpecOptions.ParsableSpecOptions = *defaults
 	}
 
 	return m, nil
@@ -134,7 +122,7 @@ var validExtensions = map[string]bool{
 func (m *Manager) loadSpec(path string) (*cert.Spec, error) {
 	log.Infof("manager: loading spec from %s", path)
 	path = filepath.Clean(path)
-	spec, err := cert.Load(path, &(m.MgrSpecOptions.SpecOptions))
+	spec, err := ReadSpecFile(path, &(m.MgrSpecOptions.ParsableSpecOptions))
 	if err == nil {
 		log.Debugf("manager: successfully loaded spec from %s with begin %v", path, spec.Before)
 	} else {
@@ -147,7 +135,7 @@ func (m *Manager) loadSpec(path string) (*cert.Spec, error) {
 // the passed in spec if it wishes to manage a path already managed by another spec
 // This invocation is transactional; the paths are added only if there is no conflict.
 func (m *Manager) updateManagedPaths(oldSpec *cert.Spec, newSpec *cert.Spec) error {
-	paths := newSpec.Paths()
+	paths := newSpec.Storage.GetPaths()
 	for idx := range paths {
 		if preexisting, ok := m.managedPaths[paths[idx]]; ok && preexisting != oldSpec {
 			return fmt.Errorf("pathway %s is already managed by spec %s", paths[idx], preexisting)
@@ -155,7 +143,7 @@ func (m *Manager) updateManagedPaths(oldSpec *cert.Spec, newSpec *cert.Spec) err
 	}
 
 	if oldSpec != nil {
-		for _, path := range oldSpec.Paths() {
+		for _, path := range oldSpec.Storage.GetPaths() {
 			delete(m.managedPaths, path)
 		}
 	}

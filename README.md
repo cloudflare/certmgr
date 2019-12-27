@@ -124,16 +124,16 @@ An example spec that writes both a CA and certificate key pair defined in JSON:
         "owner": "www-data",
         "group": "www-data"
     },
+    "ca": {
+        "path": "/etc/myservice/ca.pem",
+        "owner": "www-data",
+        "group": "www-data"
+    },
     "authority": {
         "remote": "ca.example.net:8888",
         "auth_key": "012345678012345678",
         "label": "www_ca",
         "profile": "three-month",
-        "file": {
-            "path": "/etc/myservice/ca.pem",
-            "owner": "www-data",
-            "group": "www-data"
-        },
         root_ca: "/etc/cfssl/api_server_ca.pem"
     }
 }
@@ -244,14 +244,10 @@ is disabled. The `command svcmgr` is useful in Marathon environments.
 
 Environment variables are set as follows:
 
-* CERTMGR_CHANGE_TYPE: either 'CA' or 'key'.  This indicates if the CA
-  changes, or if it's just a cert renewal.
 * CERTMGR_CA_PATH: if CA was configured for the spec, this is the path
   to the CA ondisk that was changed.
 * CERTMGR_CERT_PATH: This is the path to the cert that was written.
 * CERTMGR_KEY_PATH: This is the path to the key that was written.
-* CERTMGR_SPEC_PATH: This is the path to the cert spec definition that
-  was just refreshed.
 
 ## Subcommands
 

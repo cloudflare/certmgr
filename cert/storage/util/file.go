@@ -1,4 +1,4 @@
-package cert
+package util
 
 import (
 	"crypto/x509"
@@ -31,6 +31,21 @@ type File struct {
 
 	uid, gid int
 	mode     os.FileMode
+}
+
+// NewFile creates a new File struct and does requisite conversion of owner and group into
+// OS UID/GIDs.
+func NewFile(path, owner, group, mode string) (*File, error) {
+	f := File{
+		Path:  path,
+		Owner: owner,
+		Group: group,
+		Mode:  mode,
+	}
+	if err := f.parse(); err != nil {
+		return nil, err
+	}
+	return &f, nil
 }
 
 // UnmarshalYAML implement yaml unmarshalling logic
@@ -205,9 +220,23 @@ func (f *File) Unlink() error {
 	return err
 }
 
+func (f *File) String() string {
+	return f.Path
+}
+
 // CertificateFile is a convenience wrapper of File
 type CertificateFile struct {
 	File
+}
+
+// NewCertificateFile creates a new CertificateFile struct and does requisite conversion of owner and group into
+// OS UID/GIDs.
+func NewCertificateFile(path, owner, group, mode string) (*CertificateFile, error) {
+	f, err := NewFile(path, owner, group, mode)
+	if err != nil {
+		return nil, err
+	}
+	return &CertificateFile{*f}, nil
 }
 
 // ReadCertificate read and parse the on disk certificate
@@ -225,7 +254,7 @@ func (cf *CertificateFile) ReadCertificate() (*x509.Certificate, error) {
 
 // WriteCertificate serialize and write a certificate to disk
 func (cf *CertificateFile) WriteCertificate(cert *x509.Certificate) error {
-	return cf.WriteFile(encodeCertificateToPEM(cert))
+	return cf.WriteFile(EncodeCertificateToPEM(cert))
 }
 
 // UnmarshalYAML implement yaml unmarshalling logic
