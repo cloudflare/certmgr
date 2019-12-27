@@ -48,6 +48,11 @@ type SpecOptions struct {
 	// invocations.
 	ServiceManagerName string `json:"svcmgr" yaml:"svcmgr"`
 
+	// ServiceManagerTakeActionOnlyIfRunning if set to truee, disables reload/restart attempts
+	// if the target isn't running.  If the service manager service in use isn't a service manager- for example,
+	// a raw command- this directive does nothing.
+	ServiceManagerTakeActionOnlyIfRunning bool `json:"take_actions_only_if_running" yaml:"take_actions_only_if_running"`
+
 	// Before is how long before the cert expires to start
 	// attempting to renew it.  If unspecified, the manager default is used.
 	Before time.Duration
@@ -308,7 +313,15 @@ func Load(path string, defaults *SpecOptions) (*Spec, error) {
 		return nil, err
 	}
 
-	spec.serviceManager, err = svcmgr.New(spec.ServiceManagerName, spec.Action, spec.Service)
+	spec.serviceManager, err = svcmgr.New(
+		spec.ServiceManagerName,
+		&svcmgr.Options{
+			Action:            spec.Action,
+			Service:           spec.Service,
+			CheckTargetStatus: spec.ServiceManagerTakeActionOnlyIfRunning,
+		},
+	)
+
 	if err != nil {
 		return nil, errors.WithMessagef(err, "while parsing spec")
 	}

@@ -77,6 +77,9 @@ This contains all of the currently available parameters:
 * `metrics_address`: specifies the address for the Prometheus HTTP
   endpoint.
 * `metrics_port`: specifies the port for the Prometheus HTTP endpoint.
+* `take_actions_only_if_running`: boolean, if true, only fire a spec's action if the service is actually running.
+  If this is set to false (the default for historical reasons), this can lead to certmgr starting a downed service
+  when PKI expiry occurs.
 
 
 ## PKI Specs
@@ -184,6 +187,9 @@ A certificate spec has the following fields:
   if a fleet of certmgr are restarted at the same time, their period of wakeup is randomized
   to avoid said fleet waking up and doing interval checks at the same time for a given spec.
   This defaults to the managers default, which defaults to 0 if unspecified.
+* `take_actions_only_if_running`: boolean, if true, only fire a spec's action if the service is actually running.
+  If this is set to false (the default for historical reasons), this can lead to certmgr starting a downed service
+  when PKI expiry occurs.
 
 
 **Note**: `certmgr` will throw a warning if `svcmgr` is `dummy` _AND_ `action` is "nop" or undefined. This is because such a setup will not properly restart or reload a service upon certiifcate renewal, which will likely cause your service to crash. Running `certmgr` with the `--strict` flag will not even load a certificate spec with a `dummy svcmgr` and undefined/nop `action` configuration.

@@ -27,21 +27,21 @@ func (cm commandManager) TakeAction(changeType string, specPath string, caPath s
 	return runEnv(env, shellBinary, "-c", cm.command)
 }
 
-func newCommandManager(action string, service string) (Manager, error) {
-	if service != "" {
-		log.Warningf("svcmgr 'command': service '%s' for action '%s' doesn't do anything, ignoring", service, action)
+func newCommandManager(config *Options) (Manager, error) {
+	if config.Service != "" {
+		log.Warningf("svcmgr 'command': service '%s' for action '%s' doesn't do anything, ignoring", config.Service, config.Action)
 	}
 	if canCheckSyntax {
-		log.Debugf("svcmgr 'command': validating the action definition %s", action)
-		err := run(shellBinary, "-n", "-c", action)
+		log.Debugf("svcmgr 'command': validating the action definition %s", config.Action)
+		err := runEnv([]string{}, shellBinary, "-n", "-c", config.Action)
 		if err != nil {
-			return nil, errors.WithMessagef(err, "action %s failed bash -nc parse checks", action)
+			return nil, errors.WithMessagef(err, "action %s failed bash -nc parse checks", config.Action)
 		}
 	} else {
-		log.Warningf("svcmgr 'command': skipping parse check for '%s' since bash couldn't be found", action)
+		log.Warningf("svcmgr 'command': skipping parse check for '%s' since bash couldn't be found", config.Action)
 	}
 	return &commandManager{
-		command: action,
+		command: config.Action,
 	}, nil
 }
 
