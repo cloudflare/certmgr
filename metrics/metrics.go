@@ -11,7 +11,7 @@ import (
 
 	"github.com/cloudflare/certmgr/cert"
 	"github.com/cloudflare/cfssl/log"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -102,7 +102,7 @@ func Start(addr, port, ilink string, specs []*cert.Spec) {
 
 	addr = net.JoinHostPort(addr, port)
 	http.HandleFunc("/", genServeIndex(addr, ilink, certs))
-	http.Handle("/metrics", prometheus.Handler())
+	http.Handle("/metrics", promhttp.Handler())
 
 	log.Infof("metrics: starting Prometheus endpoint on http://%s/", addr)
 	go func() {
