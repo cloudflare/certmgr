@@ -69,14 +69,14 @@ type Manager struct {
 	managedPaths map[string]*cert.Spec
 }
 
-// UnmarshallYAML update a Manager instance via deserializing the given yaml
-func (m *Manager) UnmarshallYAML(unmarshall func(interface{}) error) error {
+// UnmarshalYAML update a Manager instance via deserializing the given yaml
+func (m *Manager) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	m = &Manager{}
 
-	// use a cast to prevent unmarshall from going recursive against this
+	// use a cast to prevent unmarshal from going recursive against this
 	// deserializer function.
 	type plain Manager
-	if err := unmarshall((*plain)(m)); err != nil {
+	if err := unmarshal((*plain)(m)); err != nil {
 		return err
 	}
 	m.FinalizeSpecOptionParsing()
