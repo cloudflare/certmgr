@@ -1,7 +1,7 @@
 # certmgr
 
 [![Build Status](https://travis-ci.org/cloudflare/certmgr.svg?branch=master)](https://travis-ci.org/cloudflare/certmgr)
-[![godoc](https://godoc.org/github.com/cloudflare/certmgr?status.svg)](https://godoc.org/github.com/cloudflare/certmgr)]
+[![godoc](https://godoc.org/github.com/cloudflare/certmgr?status.svg)](https://godoc.org/github.com/cloudflare/certmgr)
 
 certmgr is a tool for managing certificates using CFSSL. It does the
 following:
@@ -84,7 +84,7 @@ This contains all of the currently available parameters:
 
 ## PKI Specs
 
-A spec is used to manage PKI material for a consuming app.  A spec does not have to request a certificate/key, and does not have to request a CA; it must request at least one of those two modes however.
+A spec is used to manage PKI material for a consuming app.  A spec does not have to request a certificate/key, and does not have to request a CA; it must request at least one of those two modes, however.
 
 Said another way; you can use this to maintain a CA on disk.  You can use this to maintain certificate/key pair signed by the given authority; you can do both modes if you wish, but one must be specified by the spec.
 
@@ -166,11 +166,11 @@ A certificate spec has the following fields:
 * `action`: this is optional, and may be one of "restart", "reload",
   or "nop".
 * `svcmgr`: this is optional, and defaults to whatever the global
-  config defines.  This allows fine grained control for specifying the
+  config defines.  This allows fine-grained control for specifying the
   svcmgr per cert.  If you're using this in a raw certificate definition,
   you likely want the 'command' svcmgr- see that section for details of
   how to use it.
-* `request`: a CFSSL certificate request (see below).  If htis is specified, a `certificate` and `private_key` field is required.
+* `request`: a CFSSL certificate request (see below).  If this is specified, a `certificate` and `private_key` field is required.
 * `private_key` and `certificate`: file specifications (see below) for
   the private key and certificate.  Both must be specified- as must `request`- if you wish to manage a certificate/key pair.
 * `authority`: contains the CFSSL CA configuration (see below).
@@ -192,7 +192,7 @@ A certificate spec has the following fields:
   when PKI expiry occurs.
 
 
-**Note**: `certmgr` will throw a warning if `svcmgr` is `dummy` _AND_ `action` is "nop" or undefined. This is because such a setup will not properly restart or reload a service upon certiifcate renewal, which will likely cause your service to crash. Running `certmgr` with the `--strict` flag will not even load a certificate spec with a `dummy svcmgr` and undefined/nop `action` configuration.
+**Note**: `certmgr` will throw a warning if `svcmgr` is `dummy` _AND_ `action` is "nop" or undefined. This is because such a setup will not properly restart or reload a service upon certificate renewal, which will likely cause your service to crash. Running `certmgr` with the `--strict` flag will not even load a certificate spec with a `dummy svcmgr` and undefined/nop `action` configuration.
 
 
 File specifications contain the following fields:
@@ -236,9 +236,9 @@ The CA specification contains the following fields:
 
 ## `command svcmgr` and how to use it
 
-If the svcmgr is set to `command`, then `action` is interpretted as a
+If the svcmgr is set to `command`, then `action` is interpreted as a
 shell snippet to invoke via  `bash -c`.  Bash is preferred since
-it allows parse checks to be ran- if bash isn't available, parse checks
+it allows parse checks to run. If Bash isn't available, parse checks
 are skipped and `sh -c` is used.  If `sh` can't be found, then this svcmgr
 is disabled. The `command svcmgr` is useful in Marathon environments.
 
@@ -251,7 +251,7 @@ Environment variables are set as follows:
 
 ## Subcommands
 
-In addition to the certificate manager, there are a few utility
+In addition to the certificate manager, there are a few utilities
 functions specified:
 
 * `check`: validates the configuration file and all the certificate
