@@ -4,10 +4,8 @@ sudo: false
 go:
   - 1.11.x
   - 1.12.x
-install:
-  - go get github.com/golang/dep/cmd/dep
 script:
-  - go test -v ./...
+  - GOFLAGS=-mod=vendor go test -v ./...
 
 jobs:
   include:
@@ -18,7 +16,7 @@ jobs:
     script:
       - export SOURCE_DATE_EPOCH=$(git show -s --format=%ci ${TRAVIS_TAG:-${TRAVIS_COMMIT}})
       - go get github.com/mitchellh/gox
-      - gox -output="{{.Dir}}-{{.OS}}-{{.Arch}}-${TRAVIS_TAG:-${TRAVIS_COMMIT}}" -os='darwin dragonfly freebsd linux netbsd openbsd solaris' -osarch='!dragonfly/386 !darwin/arm64 !darwin/arm !linux/mips !linux/mipsle' -gcflags="-trimpath=${GOPATH}" ./cmd/certmgr/...
+      - GOFLAGS=-mod=vendor gox -output="{{.Dir}}-{{.OS}}-{{.Arch}}-${TRAVIS_TAG:-${TRAVIS_COMMIT}}" -os='darwin dragonfly freebsd linux netbsd openbsd solaris' -osarch='!dragonfly/386 !darwin/arm64 !darwin/arm !linux/mips !linux/mipsle' -gcflags="-trimpath=${GOPATH}" ./cmd/certmgr/...
       - for i in certmgr-*; do tar --mtime="${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner -c $i | gzip -n - > $i.tar.gz; done
       - shasum -a 512 certmgr-*.tar.gz | tee sha512sum.txt
     deploy:
