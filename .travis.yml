@@ -2,15 +2,14 @@ language: go
 dist: trusty
 sudo: false
 go:
-  - 1.11.x
-  - 1.12.x
+  - 1.14.x
 script:
   - GOFLAGS=-mod=vendor go test -v ./...
 
 jobs:
   include:
   - stage: Cross-Build
-    go: 1.12.x
+    go: 1.14.x
     env:
       - CGO_ENABLED=0
     script:
