@@ -8,7 +8,8 @@ import (
 	"github.com/spf13/viper"
 )
 
-var currentVersion = "2.0.1"
+// We override this at build time with a version number when built in travis
+var currentVersion = "development"
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
