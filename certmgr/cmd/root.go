@@ -65,6 +65,8 @@ func createManager() (*mgr.Manager, error) {
 	return mgr, err
 }
 func root(cmd *cobra.Command, args []string) {
+	log.Infof("starting certmgr version %s", currentVersion)
+
 	currentMgr, err := createManager()
 	if err != nil {
 		log.Fatalf("certmgr: %s", err)
