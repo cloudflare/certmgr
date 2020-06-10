@@ -23,18 +23,7 @@ import (
 )
 
 var cfgFile string
-var logLevel string
-var jsonLogging bool
 var requireSpecs bool
-
-var manager struct {
-	Dir            string
-	ServiceManager string
-	Before         time.Duration
-	Interval       time.Duration
-	IntervalSplay  time.Duration
-	InitialSplay   time.Duration
-}
 
 func newManager() (*mgr.Manager, error) {
 	return mgr.New(
@@ -45,7 +34,7 @@ func newManager() (*mgr.Manager, error) {
 			SpecOptions: cert.SpecOptions{
 				Before:        viper.GetDuration("before"),
 				Interval:      viper.GetDuration("interval"),
-				IntervalSplay: viper.GetDuration("interval.splay"),
+				IntervalSplay: viper.GetDuration("intervalsplay"),
 				InitialSplay:  viper.GetDuration("initial.splay"),
 			},
 		},
@@ -143,26 +132,29 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "f", "", "config file (default is /etc/certmgr/certmgr.yaml)")
-	RootCmd.PersistentFlags().StringVarP(&manager.Dir, "dir", "d", "", "either the directory containing certificate specs, or the path to the spec file you wish to operate on")
-	RootCmd.PersistentFlags().StringVarP(&manager.ServiceManager, "svcmgr", "m", "", fmt.Sprintf("service manager, must be one of: %s", strings.Join(storage.SupportedServiceBackends, ", ")))
-	RootCmd.PersistentFlags().DurationVarP(&manager.Before, "before", "t", cert.DefaultBefore, "how long before certificates expire to start renewing (in duration format)")
-	RootCmd.PersistentFlags().DurationVarP(&manager.Interval, "interval", "i", cert.DefaultInterval, "how long to sleep before checking for renewal (in duration format)")
-	RootCmd.PersistentFlags().DurationVarP(&manager.IntervalSplay, "interval.splay", "", 0*time.Second, "a rng value of [0..interval.splay] to add to each interval to randomize wake time")
-	RootCmd.PersistentFlags().DurationVarP(&manager.InitialSplay, "initial.splay", "", 0*time.Second, "if specified, this is a rng value of [0..initial.splay] used to randomize the first wake period.  Subsequence wakes use interval configurables.")
-	RootCmd.PersistentFlags().BoolVarP(&jsonLogging, "log.json", "", false, "if passed, logging will be in json")
-	RootCmd.PersistentFlags().StringVarP(&logLevel, "log.level", "l", "info", "logging level.  Must be one [debug|info|warning|error]")
+	RootCmd.PersistentFlags().StringP("dir", "d", "", "either the directory containing certificate specs, or the path to the spec file you wish to operate on")
+	RootCmd.PersistentFlags().StringP("svcmgr", "m", "", fmt.Sprintf("service manager, must be one of: %s", strings.Join(storage.SupportedServiceBackends, ", ")))
+	RootCmd.PersistentFlags().DurationP("before", "t", cert.DefaultBefore, "how long before certificates expire to start renewing (in duration format)")
+	RootCmd.PersistentFlags().DurationP("interval", "i", cert.DefaultInterval, "how long to sleep before checking for renewal (in duration format)")
+	RootCmd.PersistentFlags().DurationP("intervalsplay", "", 0*time.Second, "a rng value of [0..intervalsplay] to add to each interval to randomize wake time")
+	RootCmd.PersistentFlags().DurationP("initial.splay", "", 0*time.Second, "if specified, this is a rng value of [0..initial.splay] used to randomize the first wake period.  Subsequence wakes use interval configurables.")
+	RootCmd.PersistentFlags().BoolP("log.json", "", false, "if passed, logging will be in json")
+	RootCmd.PersistentFlags().StringP("log.level", "l", "info", "logging level.  Must be one [debug|info|warning|error]")
 	RootCmd.Flags().BoolVarP(&requireSpecs, "requireSpecs", "", false, "fail the daemon startup if no specs were found in the directory to watch")
 
 	viper.BindPFlag("dir", RootCmd.PersistentFlags().Lookup("dir"))
 	viper.BindPFlag("svcmgr", RootCmd.PersistentFlags().Lookup("svcmgr"))
 	viper.BindPFlag("before", RootCmd.PersistentFlags().Lookup("before"))
 	viper.BindPFlag("interval", RootCmd.PersistentFlags().Lookup("interval"))
-	viper.BindPFlag("interval.splay", RootCmd.PersistentFlags().Lookup("interval.splay"))
+	viper.BindPFlag("intervalsplay", RootCmd.PersistentFlags().Lookup("intervalsplay"))
 	viper.BindPFlag("initial.splay", RootCmd.PersistentFlags().Lookup("initial.splay"))
+	viper.BindPFlag("log.json", RootCmd.PersistentFlags().Lookup("log.json"))
+	viper.BindPFlag("log.level", RootCmd.PersistentFlags().Lookup("log.level"))
 }
 
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
+
 	if cfgFile != "" { // enable ability to specify config file via flag
 		viper.SetConfigFile(cfgFile)
 	} else {
@@ -178,7 +170,7 @@ func initConfig() {
 		log.Fatal(err)
 	}
 
-	if err := configureLogging(jsonLogging, logLevel); err != nil {
+	if err := configureLogging(viper.GetBool("log.json"), viper.GetString("log.level")); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -29,8 +29,11 @@ func version(cmd *cobra.Command, args []string) {
 	service manager:	%s
 	renew before:		%s
 	check interval:		%s
+	check splay:		%s
+	initial splay:		%s
 `, viper.GetString("dir"), viper.GetString("default_remote"),
-		viper.GetString("svcmgr"), viper.GetString("before"), viper.GetString("interval"))
+		viper.GetString("svcmgr"), viper.GetString("before"), viper.GetString("interval"),
+		viper.GetString("intervalsplay"), viper.GetString("initial.splay"))
 }
 
 func init() {
