@@ -35,7 +35,7 @@ func newManager() (*mgr.Manager, error) {
 				Before:        viper.GetDuration("before"),
 				Interval:      viper.GetDuration("interval"),
 				IntervalSplay: viper.GetDuration("intervalsplay"),
-				InitialSplay:  viper.GetDuration("initial.splay"),
+				InitialSplay:  viper.GetDuration("initialsplay"),
 			},
 		},
 	)
@@ -137,7 +137,7 @@ func init() {
 	RootCmd.PersistentFlags().DurationP("before", "t", cert.DefaultBefore, "how long before certificates expire to start renewing (in duration format)")
 	RootCmd.PersistentFlags().DurationP("interval", "i", cert.DefaultInterval, "how long to sleep before checking for renewal (in duration format)")
 	RootCmd.PersistentFlags().DurationP("intervalsplay", "", 0*time.Second, "a rng value of [0..intervalsplay] to add to each interval to randomize wake time")
-	RootCmd.PersistentFlags().DurationP("initial.splay", "", 0*time.Second, "if specified, this is a rng value of [0..initial.splay] used to randomize the first wake period.  Subsequence wakes use interval configurables.")
+	RootCmd.PersistentFlags().DurationP("initialsplay", "", 0*time.Second, "if specified, this is a rng value of [0..initialsplay] used to randomize the first wake period.  Subsequence wakes use interval configurables.")
 	RootCmd.PersistentFlags().BoolP("log.json", "", false, "if passed, logging will be in json")
 	RootCmd.PersistentFlags().StringP("log.level", "l", "info", "logging level.  Must be one [debug|info|warning|error]")
 	RootCmd.Flags().BoolVarP(&requireSpecs, "requireSpecs", "", false, "fail the daemon startup if no specs were found in the directory to watch")
@@ -147,7 +147,7 @@ func init() {
 	viper.BindPFlag("before", RootCmd.PersistentFlags().Lookup("before"))
 	viper.BindPFlag("interval", RootCmd.PersistentFlags().Lookup("interval"))
 	viper.BindPFlag("intervalsplay", RootCmd.PersistentFlags().Lookup("intervalsplay"))
-	viper.BindPFlag("initial.splay", RootCmd.PersistentFlags().Lookup("initial.splay"))
+	viper.BindPFlag("initialsplay", RootCmd.PersistentFlags().Lookup("initialsplay"))
 	viper.BindPFlag("log.json", RootCmd.PersistentFlags().Lookup("log.json"))
 	viper.BindPFlag("log.level", RootCmd.PersistentFlags().Lookup("log.level"))
 }
