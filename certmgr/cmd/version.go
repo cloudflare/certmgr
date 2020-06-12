@@ -33,7 +33,7 @@ func version(cmd *cobra.Command, args []string) {
 	initial splay:		%s
 `, viper.GetString("dir"), viper.GetString("default_remote"),
 		viper.GetString("svcmgr"), viper.GetString("before"), viper.GetString("interval"),
-		viper.GetString("intervalsplay"), viper.GetString("initialsplay"))
+		viper.GetString("interval_splay"), viper.GetString("initial_splay"))
 }
 
 func init() {
