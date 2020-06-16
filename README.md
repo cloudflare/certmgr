@@ -190,6 +190,9 @@ A certificate spec has the following fields:
 * `take_actions_only_if_running`: boolean, if true, only fire a spec's action if the service is actually running.
   If this is set to false (the default for historical reasons), this can lead to certmgr starting a downed service
   when PKI expiry occurs.
+* `key_usages`: optional: An array of strings defining what this key should be used for. Certmgr will consider a cert invalid
+   if it does not contain these key usages. Possible values are from cfssl's [ExtKeyUsage map](https://github.com/cloudflare/cfssl/blob/master/config/config.go#L654)
+  
 
 
 **Note**: `certmgr` will throw a warning if `svcmgr` is `dummy` _AND_ `action` is "nop" or undefined. This is because such a setup will not properly restart or reload a service upon certificate renewal, which will likely cause your service to crash. Running `certmgr` with the `--strict` flag will not even load a certificate spec with a `dummy svcmgr` and undefined/nop `action` configuration.

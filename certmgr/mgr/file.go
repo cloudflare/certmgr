@@ -1,6 +1,7 @@
 package mgr
 
 import (
+	"crypto/x509"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -15,9 +16,19 @@ import (
 	"github.com/cloudflare/certmgr/cert"
 	"github.com/cloudflare/certmgr/cert/storage"
 	"github.com/cloudflare/certmgr/cert/storage/util"
+	"github.com/cloudflare/cfssl/config"
 	"github.com/cloudflare/cfssl/csr"
 	log "github.com/sirupsen/logrus"
 )
+
+//validExtUsage extracts the valid values from cfssl's ExtKeyUsage map, which we print when someone specifies an invalid value
+var validExtUsage = func() string {
+	keys := make([]string, 0, len(config.ExtKeyUsage))
+	for k := range config.ExtKeyUsage {
+		keys = append(keys, "'"+k+"'")
+	}
+	return strings.Join(keys, ",")
+}()
 
 // ParsableAuthority is an authority struct that can load the Authkey from content on disk.  This is used internally
 // by Authority for unmarshal- this shouldn't be used for anything but on disk certmgr spec's.
@@ -97,6 +108,9 @@ type ParsableSpecOptions struct {
 
 	// ParsedInitialSplay is used to update the SpecOptions.InitialSplay field.
 	ParsedInitialSplay ParsableDuration `json:"initial_splay" yaml:"initial_splay"`
+
+	// ParsedKeyUsages is used to update the SpecOptions.KeyUsages field.
+	ParsedKeyUsages []string `json:"key_usages" yaml:"key_usages"`
 
 	// Remote is shorthand for updating CA.Remote for instantiation.
 	// This specifies the remote upstream to talk to.
@@ -200,6 +214,20 @@ func ReadSpecFile(path string, defaults *ParsableSpecOptions) (*cert.Spec, error
 
 	// transfer the parsed durations into their final resting spot.
 	spec.FinalizeSpecOptionParsing()
+
+	if len(spec.ParsedKeyUsages) > 0 {
+		for _, KeyUsageRaw := range spec.ParsedKeyUsages {
+			keyUsage, ok := config.ExtKeyUsage[strings.ToLower(KeyUsageRaw)]
+			if !ok {
+				log.Errorf("spec %s specifies unknown key usage '%s'. Valid values are: [%v]", path, KeyUsageRaw, validExtUsage)
+			} else {
+				spec.KeyUsages = append(spec.KeyUsages, keyUsage)
+			}
+		}
+	} else { // Key usage not defined, default to server auth as that is both most common and was our previous behavior.
+		log.Warnf("spec %s does not specify key usage, defaulting to \"server auth\"", path)
+		spec.KeyUsages = []x509.ExtKeyUsage{config.ExtKeyUsage["server auth"]}
+	}
 
 	if spec.Authority.Remote == "" {
 		spec.Authority.Remote = spec.Remote

@@ -50,9 +50,13 @@ type SpecOptions struct {
 	// This is Primarily useful to force an initial randomization if many nodes with certmgr are restarted all
 	// at the same time.
 	InitialSplay time.Duration
+
+	// KeyUsages specifies what this key will be used for, so that certmgr can verify it is valid for that usage.
+	// It is optional and by default we assume keys will be used for "TLS Web Server Authentication"
+	KeyUsages []x509.ExtKeyUsage
 }
 
-// NewSpecOptions creates a new SpecOptions structu and populates it with defaults.
+// NewSpecOptions creates a new SpecOptions struct and populates it with defaults.
 func NewSpecOptions() *SpecOptions {
 	return &SpecOptions{
 		Before:   DefaultBefore,
@@ -160,7 +164,7 @@ func (spec *Spec) validateStoredPKI(currentCA *x509.Certificate) error {
 	// update internal metrics
 	spec.updateCertExpiry(keyPair.Leaf.NotAfter)
 
-	err = CertificateChainVerify(currentCA, keyPair.Leaf)
+	err = CertificateChainVerify(currentCA, keyPair.Leaf, spec.KeyUsages)
 	if err != nil {
 		return errors.WithMessage(err, "stored cert failed CA check")
 	}
