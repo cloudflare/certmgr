@@ -191,7 +191,7 @@ A certificate spec has the following fields:
   If this is set to false (the default for historical reasons), this can lead to certmgr starting a downed service
   when PKI expiry occurs.
 * `key_usages`: optional: An array of strings defining what this key should be used for. Certmgr will consider a cert invalid
-   if it does not contain these key usages. Possible values are from cfssl's [ExtKeyUsage map](https://github.com/cloudflare/cfssl/blob/master/config/config.go#L654)
+   if it does not contain these key usages. Possible values are from cfssl's [ExtKeyUsage map](https://github.com/cloudflare/cfssl/blob/1.3.3/config/config.go#L568)
   
 
 

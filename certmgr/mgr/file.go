@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,13 +23,14 @@ import (
 )
 
 //validExtUsage extracts the valid values from cfssl's ExtKeyUsage map, which we print when someone specifies an invalid value
-var validExtUsage = func() string {
-	keys := make([]string, 0, len(config.ExtKeyUsage))
-	for k := range config.ExtKeyUsage {
-		keys = append(keys, "'"+k+"'")
+var validExtUsage = func() []string {
+	usages := make([]string, 0, len(config.ExtKeyUsage))
+	for usage := range config.ExtKeyUsage {
+		usages = append(usages, usage)
 	}
-	return strings.Join(keys, ",")
-}()
+	sort.Strings(usages)
+	return usages
+}
 
 // ParsableAuthority is an authority struct that can load the Authkey from content on disk.  This is used internally
 // by Authority for unmarshal- this shouldn't be used for anything but on disk certmgr spec's.
@@ -219,10 +221,9 @@ func ReadSpecFile(path string, defaults *ParsableSpecOptions) (*cert.Spec, error
 		for _, KeyUsageRaw := range spec.ParsedKeyUsages {
 			keyUsage, ok := config.ExtKeyUsage[strings.ToLower(KeyUsageRaw)]
 			if !ok {
-				log.Errorf("spec %s specifies unknown key usage '%s'. Valid values are: [%v]", path, KeyUsageRaw, validExtUsage)
-			} else {
-				spec.KeyUsages = append(spec.KeyUsages, keyUsage)
+				return nil, fmt.Errorf("spec %s specifies unknown key usage '%s'. Valid values are: %q", path, KeyUsageRaw, validExtUsage())
 			}
+			spec.KeyUsages = append(spec.KeyUsages, keyUsage)
 		}
 	} else { // Key usage not defined, default to server auth as that is both most common and was our previous behavior.
 		log.Warnf("spec %s does not specify key usage, defaulting to \"server auth\"", path)
