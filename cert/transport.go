@@ -13,7 +13,8 @@ import (
 // authErrorHTTP builds the error code returned for an error.
 var authErrorHTTP = int(errors.APIClientError) + int(errors.ClientHTTPError)
 
-const authErrorMessage = "invalid token"
+const tokenAuthErrorMessage = "invalid token"
+const otherAuthErrorMessage = "not authorised"
 
 // isAuthError returns true if the error is due to a CFSSL
 // authentication error.
@@ -32,7 +33,7 @@ func isAuthError(err error) bool {
 
 		log.Debugf("manager: CFSSL error is %#v", cferr)
 		for _, responseError := range response.Errors {
-			if responseError.Message == authErrorMessage {
+			if (responseError.Message == tokenAuthErrorMessage) || (responseError.Message == otherAuthErrorMessage) {
 				return true
 			}
 		}
