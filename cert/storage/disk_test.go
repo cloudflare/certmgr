@@ -69,7 +69,7 @@ func TestFileBackend(t *testing.T) {
 			}
 			tmpDir, err := ioutil.TempDir("", "tests")
 			if err != nil {
-				t.Fatalf("falied to create tempdir: %s", err)
+				t.Fatalf("failed to create tempdir: %s", err)
 			}
 			defer os.RemoveAll(tmpDir)
 			existingCA, existingKeyPair, err := fb.Load()

@@ -283,7 +283,7 @@ func (spec *Spec) fetchNewKeyPair() (*tls.Certificate, error) {
 
 	// use exponential backoff rather than using cfssl's backoff implementation; that implementation
 	// can back off up to an hour before returning control back to the invoker; that isn't
-	// desirable.  If we can't get the requests in in a timely fahsion, we'll wake up and
+	// desirable.  If we can't get the requests in in a timely fashion, we'll wake up and
 	// revisit via our own scheduling.
 
 	b := backoff.NewExponentialBackOff()

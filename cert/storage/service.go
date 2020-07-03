@@ -37,7 +37,7 @@ var SupportedServiceBackends = []string{
 }
 
 // NewFileServiceNotifier returns a new storage backend that persists to FileBackend, and invokes
-// service (systemd, rc5, etc) restart/reloads of targetted services
+// service (systemd, rc5, etc) restart/reloads of targeted services
 func NewFileServiceNotifier(FileBackend *FileBackend, name string, config *FileServiceOptions) (*FileServiceNotifier, error) {
 	f := &FileServiceNotifier{
 		FileBackend:        FileBackend,
