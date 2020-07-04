@@ -32,7 +32,7 @@ type ParsableAuthority struct {
 	// whitespace stripped content as the AuthKey.  This will override Authkey if both are specified.
 	AuthKeyFile string `json:"auth_key_file" yaml:"auth_key_file"`
 
-	// CA is for compatiblity with old certmgr spec approach of intermixing CA with authority.
+	// CA is for compatibility with old certmgr spec approach of intermixing CA with authority.
 	CA *util.CertificateFile `json:"file" yaml:"file"`
 }
 

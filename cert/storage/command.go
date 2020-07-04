@@ -36,7 +36,7 @@ type FileCommandNotifier struct {
 }
 
 // NewFileCommandNotifier creates a new storage backend; it expects a FileBackend for the content to store,
-// and a command (in string form) for what to execute on successfull updates.
+// and a command (in string form) for what to execute on successful updates.
 func NewFileCommandNotifier(FileBackend *FileBackend, command string) (*FileCommandNotifier, error) {
 	if canCheckSyntax {
 		log.Debugf("svcmgr 'command': validating the action definition %s", command)
