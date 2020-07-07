@@ -255,11 +255,13 @@ func ReadSpecFile(path string, defaults *ParsableSpecOptions) (*cert.Spec, error
 
 	s, err := cert.NewSpec(path, &spec.ParsableSpecOptions.SpecOptions, &spec.Authority.Authority, spec.Request, pkiStorage)
 	if err != nil {
-		s.WakeCallbacks = append(s.WakeCallbacks, func() {
-			warnIfHasChangedOnDisk(path, specStat.ModTime())
-		})
+		return nil, err
 	}
-	return s, err
+
+	s.WakeCallbacks = append(s.WakeCallbacks, func() {
+		warnIfHasChangedOnDisk(path, specStat.ModTime())
+	})
+	return s, nil
 }
 
 // warnIfHasChangedOnDisk logs warnings if the spec in memory doesn't reflect what's on disk.
