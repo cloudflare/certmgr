@@ -290,24 +290,22 @@ func (spec *Spec) fetchNewKeyPair() (*tls.Certificate, error) {
 	b.MaxElapsedTime = backoffMaxDelay
 	err := backoff.Retry(
 		func() error {
-
 			err := spec.tr.RefreshKeys()
 			if err != nil {
 				SpecRequestFailureCount.WithLabelValues(spec.Name).Inc()
 				if isAuthError(err) {
-					log.Errorf("spec %s: invalid auth key.  Giving up", spec)
-					err = backoff.Permanent(errors.New("invalid auth key"))
-				} else {
-					log.Warningf("spec %s: failed fetching new cert: %s", spec, err)
+					log.Errorf("spec %s: authentication error. Giving up without retries", spec)
+					return backoff.Permanent(errors.WithMessage(err, "error from gatewayca"))
 				}
+				log.Warningf("spec %s: failed fetching new cert: %s", spec, err)
 			}
-			return err
+			return nil
 		},
 		b,
 	)
 
 	if err != nil {
-		return nil, errors.WithMessage(err, "while fetching certificate/key")
+		return nil, errors.WithMessage(err, "errors while fetching certificate/key")
 	}
 
 	pair, err := spec.tr.Provider.X509KeyPair()
