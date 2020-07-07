@@ -41,11 +41,12 @@ func CertificateMatchesHostname(hosts []string, cert *x509.Certificate) bool {
 }
 
 // CertificateChainVerify validates if a given cert is derived from the given CA
-func CertificateChainVerify(ca *x509.Certificate, cert *x509.Certificate) error {
+func CertificateChainVerify(ca *x509.Certificate, cert *x509.Certificate, keyUsages []x509.ExtKeyUsage) error {
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
 	_, err := cert.Verify(x509.VerifyOptions{
-		Roots: roots,
+		Roots:     roots,
+		KeyUsages: keyUsages,
 	})
 	return err
 }
