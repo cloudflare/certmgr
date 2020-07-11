@@ -48,7 +48,7 @@ func TestFileBackend(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ca, cert, key, expectedPaths := getFilesAndPaths(test.ca, test.cert, test.key)
 
-			fb, err := NewFileBackend(ca, cert, key)
+			fb, err := NewFileBackend("testspec", ca, cert, key)
 			if test.fail {
 				if err == nil {
 					t.Fatal("Error wasn't returned")

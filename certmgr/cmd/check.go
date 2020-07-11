@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/cloudflare/cfssl/log"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -19,12 +19,12 @@ checkable during the certificate provisioning process.`,
 func check(cmd *cobra.Command, args []string) {
 	mgr, err := newManager()
 	if err != nil {
-		log.Fatalf("Failed: %s", err)
+		log.Fatal().Err(err).Msg("failed to create manager")
 	}
 
 	err = mgr.Load()
 	if err != nil {
-		log.Fatalf("Failed: %s", err)
+		log.Fatal().Err(err).Msg("failed to load specs")
 	}
 }
 

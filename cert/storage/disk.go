@@ -7,7 +7,8 @@ import (
 
 	"github.com/cloudflare/certmgr/cert/storage/util"
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // FileBackend is used for storing PKI content to disk and enforcing permissions.
@@ -15,10 +16,12 @@ type FileBackend struct {
 	ca   *util.CertificateFile
 	cert *util.CertificateFile
 	key  *util.File
+	log  zerolog.Logger
 }
 
 // NewFileBackend creates a storage backend used for writing CA/keypair's to disk.
-func NewFileBackend(ca *util.CertificateFile, cert *util.CertificateFile, key *util.File) (*FileBackend, error) {
+func NewFileBackend(specname string, ca *util.CertificateFile, cert *util.CertificateFile, key *util.File) (*FileBackend, error) {
+
 	if (cert == nil) != (key == nil) {
 		return nil, fmt.Errorf("cert field and key field must either both be specified, or neither specified.  received cert=%v key=%v", cert, key)
 	}
@@ -31,6 +34,9 @@ func NewFileBackend(ca *util.CertificateFile, cert *util.CertificateFile, key *u
 		cert: cert,
 		key:  key,
 	}
+	// register a contextual logger to include these fields
+	fb.log = log.With().Str("spec", specname).Str("filebackend", fb.String()).Logger()
+
 	err := fb.verifyUniquePaths()
 	if err != nil {
 		fb = nil
@@ -81,7 +87,7 @@ func (fb *FileBackend) GetPaths() []string {
 // Load loads any PKI that this backend has on disk, checking that permissions are correct- erroring
 // if content is missing that is expected, or permissions don't align.
 func (fb *FileBackend) Load() (*x509.Certificate, *tls.Certificate, error) {
-	log.Debugf("loading PKI material for %s", fb)
+	fb.log.Debug().Msg("loading PKI backend")
 	var ca *x509.Certificate
 	var err error
 	fail := func(err error) (*x509.Certificate, *tls.Certificate, error) { return nil, nil, err }
@@ -121,7 +127,7 @@ func (fb *FileBackend) Load() (*x509.Certificate, *tls.Certificate, error) {
 
 // Store writes new PKI content to disk, enforcing permissions.
 func (fb *FileBackend) Store(ca *x509.Certificate, keyPair *tls.Certificate) error {
-	log.Infof("persisting PKI for %v", fb)
+	fb.log.Info().Stringer("filebackend", fb).Msg("persisting PKI")
 	if fb.ca != nil {
 		err := fb.ca.WriteCertificate(ca)
 		if err != nil {
@@ -153,7 +159,7 @@ func (fb *FileBackend) Store(ca *x509.Certificate, keyPair *tls.Certificate) err
 
 // Wipe deletes from on disk any PKI material that exists
 func (fb *FileBackend) Wipe() error {
-	log.Infof("wiping PKI for %v", fb)
+	fb.log.Info().Msg("wiping PKI")
 	if fb.ca != nil {
 		if err := fb.ca.Unlink(); err != nil {
 			return errors.WithMessagef(err, "failed removing CA '%s' from disk", fb.ca.Path)
