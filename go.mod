@@ -7,12 +7,11 @@ require (
 	github.com/cloudflare/backoff v0.0.0-20161212185259-647f3cdfc87a // indirect
 	github.com/cloudflare/cfssl v0.0.0-20190627231140-2001f384ec4f
 	github.com/google/certificate-transparency-go v1.0.21 // indirect
-	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/magiconair/properties v1.8.1 // indirect
 	github.com/pelletier/go-toml v1.4.0 // indirect
 	github.com/pkg/errors v0.8.2-0.20191109102316-7f95ac13edff
 	github.com/prometheus/client_golang v0.9.4
-	github.com/sirupsen/logrus v1.4.2
+	github.com/rs/zerolog v1.19.0
 	github.com/spf13/afero v1.2.2 // indirect
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect

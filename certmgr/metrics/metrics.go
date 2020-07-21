@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 const metricsNamespace = "certmgr"
@@ -49,7 +49,7 @@ func genServeIndex(addr string) func(http.ResponseWriter, *http.Request) {
 // configured.
 func Start(addr, port string) {
 	if addr == "" || port == "" {
-		log.Warning("metrics: no prometheus address or port configured")
+		log.Warn().Msg("metrics: no prometheus address or port configured, metrics disabled")
 		return
 	}
 
@@ -57,8 +57,8 @@ func Start(addr, port string) {
 	http.HandleFunc("/", genServeIndex(addr))
 	http.Handle("/metrics", promhttp.Handler())
 
-	log.Infof("metrics: starting Prometheus endpoint on http://%s/", addr)
+	log.Info().Str("addr", "http://"+addr).Msg("metrics: starting prometheus endpoint")
 	go func() {
-		log.Fatal(http.ListenAndServe(addr, nil))
+		log.Fatal().Err(http.ListenAndServe(addr, nil))
 	}()
 }

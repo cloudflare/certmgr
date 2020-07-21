@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"syscall"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 var idRegexp = regexp.MustCompile(`^\d+$`)
@@ -158,7 +158,7 @@ func (f *File) CheckPermissions() error {
 	unixStat, ok := st.Sys().(*syscall.Stat_t)
 	if !ok {
 		// yes, this is noisy on windows.  Don't think we have windows users however...
-		log.Warningf("Certmgr doesn't know how to verify ownership for %s", f.Path)
+		log.Warn().Str("path", f.Path).Msg("certmgr doesn't know how to verify ownership")
 		return nil
 	}
 
@@ -212,7 +212,7 @@ func (f *File) WriteFile(data []byte) error {
 
 // Unlink deletes the file specified by the Path field.
 func (f *File) Unlink() error {
-	log.Debugf("removing %s", f.Path)
+	log.Debug().Str("path", f.Path).Msg("removing")
 	err := os.Remove(f.Path)
 	if os.IsNotExist(err) {
 		return nil

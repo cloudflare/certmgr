@@ -14,9 +14,10 @@ import (
 	"github.com/cloudflare/certmgr/cert/storage"
 	"github.com/cloudflare/certmgr/certmgr/metrics"
 	"github.com/cloudflare/certmgr/certmgr/mgr"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
-	// needed for ensuring cfssl logs go through logrus
+	// needed for ensuring cfssl logs go through zerolog
 	cfssl_log "github.com/cloudflare/cfssl/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -54,11 +55,9 @@ func createManager() (*mgr.Manager, error) {
 	return mgr, err
 }
 func root(cmd *cobra.Command, args []string) {
-	log.Infof("starting certmgr version %s", currentVersion)
-
 	currentMgr, err := createManager()
 	if err != nil {
-		log.Fatalf("certmgr: %s", err)
+		log.Fatal().Err(err)
 	}
 
 	metrics.Start(
@@ -90,25 +89,24 @@ Loop:
 	for {
 		select {
 		case <-quit:
-			log.Info("signaled to shutdown")
+			log.Info().Msg("signalled to shutdown")
 			globalCancel()
 		case <-currentMgrDone:
-			log.Info("manager has shutdown, exiting")
+			log.Info().Msg("manager has shutdown, exiting")
 			break Loop
 		case <-reload:
-			log.Info("asked to reload, waiting for manager to shutdown")
+			log.Info().Msg("asked to reload, waiting for manager to shutdown")
 			currentMgrCancel()
 			<-currentMgrDone
-			log.Info("reloading config")
+			log.Info().Msg("reloading config")
 			newMgr, err := createManager()
 			if err != nil {
-				log.Errorf("reload failed: %s", err)
-				log.Error("continuing to run with old loaded configuration")
+				log.Error().Err(err).Msg("reload failed, continuing to run with old configuration")
 			} else {
-				log.Infof("manager reloaded successfully")
+				log.Info().Msg("manager reloaded successfully")
 				currentMgr = newMgr
 			}
-			log.Info("starting manager")
+			log.Info().Str("version", currentVersion).Msg("starting certmgr")
 			currentMgrDone, currentMgrCancel = runMgr(currentMgr)
 		}
 	}
@@ -169,60 +167,38 @@ func initConfig() {
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err)
 	}
 
 	if err := configureLogging(viper.GetBool("log.json"), viper.GetString("log.level")); err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err)
 	}
 }
 
-// cfsslLogAdaptor implements SyslogWriter interface, redirecting to logrus logging.
-type cfsslLogAdaptor struct{}
-
-func (cfssl *cfsslLogAdaptor) Debug(s string) {
-	log.Debug(s)
-}
-
-func (cfssl *cfsslLogAdaptor) Info(s string) {
-	log.Info(s)
-}
-
-func (cfssl *cfsslLogAdaptor) Warning(s string) {
-	log.Warning(s)
-}
-
-func (cfssl *cfsslLogAdaptor) Err(s string) {
-	log.Error(s)
-}
-
-func (cfssl *cfsslLogAdaptor) Crit(s string) {
-	log.Error(s)
-}
-
-func (cfssl *cfsslLogAdaptor) Emerg(s string) {
-	log.Error(s)
-}
-
 func configureLogging(jsonLogging bool, logLevel string) error {
-
 	// install our shim for cfssl.
 	cfssl_log.SetLogger(&cfsslLogAdaptor{})
 
 	// configure json logging if requested.
 	if jsonLogging {
-		log.SetFormatter(&log.JSONFormatter{})
+		log.Logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
+	} else {
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	}
 
 	switch strings.ToLower(logLevel) {
 	case "debug":
-		log.SetLevel(log.DebugLevel)
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+
+		// In debug mode, we also add a filename and line number to any log calls
+		log.Logger = log.With().Caller().Logger()
+		log.Debug().Msg("enabled debug mode with caller logging")
 	case "info":
-		log.SetLevel(log.InfoLevel)
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	case "warning":
-		log.SetLevel(log.WarnLevel)
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
 	case "error":
-		log.SetLevel(log.ErrorLevel)
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
 	default:
 		return fmt.Errorf("log level %s is not a valid level", logLevel)
 	}

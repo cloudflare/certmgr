@@ -5,7 +5,7 @@ import (
 
 	"github.com/cloudflare/cfssl/api"
 	"github.com/cloudflare/cfssl/errors"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 // Utility functions for interacting with the transport package.
@@ -30,8 +30,7 @@ func isAuthError(err error) bool {
 		if innerErr != nil {
 			return false
 		}
-
-		log.Debugf("manager: CFSSL error is %#v", cferr)
+		log.Debug().Err(cferr).Msg("cfssl error received")
 		for _, responseError := range response.Errors {
 			if (responseError.Message == tokenAuthErrorMessage) || (responseError.Message == otherAuthErrorMessage) {
 				return true

@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"github.com/cloudflare/certmgr/cert/storage"
-	"github.com/cloudflare/cfssl/log"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -23,51 +23,51 @@ TLS key pairs they identify exist, are valid, and that they are up-to-date.`,
 func ensure(cmd *cobra.Command, args []string) {
 	mgr, err := newManager()
 	if err != nil {
-		log.Fatalf("failed creating manager", err)
+		log.Fatal().Err(err).Msg("failed creating manager")
 	}
 
 	err = mgr.Load()
 	if err != nil {
-		log.Fatalf("failed loading manager: %s", err)
+		log.Fatal().Err(err).Msg("failed loading manager")
 	}
 
 	if !allowZeroSpecs && len(mgr.Certs) == 0 {
-		log.Fatalf("Failed: No specs were found to process")
+		log.Fatal().Msg("no specs were found to process")
 	}
 
 	failedSpecs := false
 	for _, cert := range mgr.Certs {
+		log := log.With().Str("spec", cert.Name).Logger()
 		if !enableActions {
 			switch t := cert.Storage.(type) {
 			case *storage.FileBackend: // nothing to do here, just noting it for completeness
 			case *storage.FileServiceNotifier:
-				log.Debugf("disabling actions for %s", cert)
+				log.Debug().Msg("disabling actions")
 				cert.Storage = t.FileBackend
 			case *storage.FileCommandNotifier:
-				log.Debugf("disabling actions for %s", cert)
+				log.Debug().Msg("disabling actions")
 				cert.Storage = t.FileBackend
 			default:
-				log.Errorf("spec %s has a storage backend we do not know how to work with; this is an internal certmgr bug", cert)
+				log.Error().Msg("certmgr has a storage backend we do not know how to work with; this is an internal certmgr bug")
 				continue
 			}
 		}
-		log.Infof("backend is %s", cert.Storage)
-
+		log.Info().Bool("force", forceRegen).Msg("processing spec")
 		if forceRegen {
 			err = cert.ForceUpdate()
 		} else {
 			err = cert.UpdateIfNeeded()
 		}
 		if err != nil {
-			log.Errorf("Failed processing spec %s due to %s", cert, err)
+			log.Error().Err(err).Msg("failed processing spec")
 			failedSpecs = true
 		}
 	}
 	if !failedSpecs {
-		log.Info("processed specs without issue")
+		log.Info().Msg("processed all specs without issue")
 		os.Exit(0)
 	}
-	log.Error("not all specs were processed successfully")
+	log.Error().Msg("not all specs were processed successfully")
 	os.Exit(1)
 }
 
