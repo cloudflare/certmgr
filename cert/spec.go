@@ -171,8 +171,13 @@ func (spec *Spec) validateStoredPKI(currentCA *x509.Certificate) error {
 
 	// confirm that pkix is the same.  This catches things like OU being changed; these are slices
 	// of slices and there isn't a usable equality check, thus the .String() usage.
-	if spec.Request.Name().String() != keyPair.Leaf.Subject.String() {
-		return fmt.Errorf("spec subject has changed: was %s, now is %s", keyPair.Leaf.Subject, spec.Request.Name())
+	name, err := spec.Request.Name()
+	if err != nil {
+		return errors.WithMessage(err, "failed PKIX name for the request")
+	}
+
+	if name.String() != keyPair.Leaf.Subject.String() {
+		return fmt.Errorf("spec subject has changed: was %s, now is %s", keyPair.Leaf.Subject, name)
 	}
 
 	if !CertificateMatchesHostname(spec.Request.Hosts, keyPair.Leaf) {

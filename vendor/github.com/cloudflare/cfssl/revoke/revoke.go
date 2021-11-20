@@ -25,6 +25,9 @@ import (
 	"github.com/cloudflare/cfssl/log"
 )
 
+// HTTPClient is an instance of http.Client that will be used for all HTTP requests.
+var HTTPClient = http.DefaultClient
+
 // HardFail determines whether the failure to check the revocation
 // status of a certificate (i.e. due to network failure) causes
 // verification to fail (a hard failure).
@@ -99,10 +102,13 @@ func revCheck(cert *x509.Certificate) (revoked, ok bool, err error) {
 
 // fetchCRL fetches and parses a CRL.
 func fetchCRL(url string) (*pkix.CertificateList, error) {
-	resp, err := http.Get(url)
+	resp, err := HTTPClient.Get(url)
 	if err != nil {
 		return nil, err
-	} else if resp.StatusCode >= 300 {
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
 		return nil, errors.New("failed to retrieve CRL")
 	}
 
@@ -110,8 +116,6 @@ func fetchCRL(url string) (*pkix.CertificateList, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp.Body.Close()
-
 	return x509.ParseCRL(body)
 }
 
@@ -133,13 +137,13 @@ func getIssuer(cert *x509.Certificate) *x509.Certificate {
 // check a cert against a specific CRL. Returns the same bool pair
 // as revCheck, plus an error if one occurred.
 func certIsRevokedCRL(cert *x509.Certificate, url string) (revoked, ok bool, err error) {
+	crlLock.Lock()
 	crl, ok := CRLSet[url]
 	if ok && crl == nil {
 		ok = false
-		crlLock.Lock()
 		delete(CRLSet, url)
-		crlLock.Unlock()
 	}
+	crlLock.Unlock()
 
 	var shouldFetchCRL = true
 	if ok {
@@ -205,16 +209,16 @@ func VerifyCertificateError(cert *x509.Certificate) (revoked, ok bool, err error
 }
 
 func fetchRemote(url string) (*x509.Certificate, error) {
-	resp, err := http.Get(url)
+	resp, err := HTTPClient.Get(url)
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	in, err := remoteRead(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	resp.Body.Close()
 
 	p, _ := pem.Decode(in)
 	if p != nil {
@@ -278,15 +282,16 @@ func sendOCSPRequest(server string, req []byte, leaf, issuer *x509.Certificate) 
 	var err error
 	if len(req) > 256 {
 		buf := bytes.NewBuffer(req)
-		resp, err = http.Post(server, "application/ocsp-request", buf)
+		resp, err = HTTPClient.Post(server, "application/ocsp-request", buf)
 	} else {
 		reqURL := server + "/" + neturl.QueryEscape(base64.StdEncoding.EncodeToString(req))
-		resp, err = http.Get(reqURL)
+		resp, err = HTTPClient.Get(reqURL)
 	}
 
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, errors.New("failed to retrieve OSCP")
@@ -296,7 +301,6 @@ func sendOCSPRequest(server string, req []byte, leaf, issuer *x509.Certificate) 
 	if err != nil {
 		return nil, err
 	}
-	resp.Body.Close()
 
 	switch {
 	case bytes.Equal(body, ocsp.UnauthorizedErrorResponse):

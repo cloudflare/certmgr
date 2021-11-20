@@ -70,6 +70,9 @@ type SignRequest struct {
 	// be passed to SignFromPrecert with the SCTs in order to create a
 	// valid certificate.
 	ReturnPrecert bool
+
+	// Arbitrary metadata to be stored in certdb.
+	Metadata map[string]interface{} `json:"metadata"`
 }
 
 // appendIf appends to a if s is not an empty string.
@@ -169,13 +172,36 @@ func DefaultSigAlgo(priv crypto.Signer) x509.SignatureAlgorithm {
 	}
 }
 
+func isCommonAttr(t []int) bool {
+	return (len(t) == 4 && t[0] == 2 && t[1] == 5 && t[2] == 4 && (t[3] == 3 || (t[3] >= 5 && t[3] <= 11) || t[3] == 17))
+}
+
 // ParseCertificateRequest takes an incoming certificate request and
 // builds a certificate template from it.
-func ParseCertificateRequest(s Signer, csrBytes []byte) (template *x509.Certificate, err error) {
+func ParseCertificateRequest(s Signer, p *config.SigningProfile, csrBytes []byte) (template *x509.Certificate, err error) {
 	csrv, err := x509.ParseCertificateRequest(csrBytes)
 	if err != nil {
 		err = cferr.Wrap(cferr.CSRError, cferr.ParseFailed, err)
 		return
+	}
+
+	var r pkix.RDNSequence
+	_, err = asn1.Unmarshal(csrv.RawSubject, &r)
+
+	if err != nil {
+		err = cferr.Wrap(cferr.CSRError, cferr.ParseFailed, err)
+		return
+	}
+
+	var subject pkix.Name
+	subject.FillFromRDNSequence(&r)
+
+	for _, v := range r {
+		for _, vv := range v {
+			if !isCommonAttr(vv.Type) {
+				subject.ExtraNames = append(subject.ExtraNames, vv)
+			}
+		}
 	}
 
 	err = csrv.CheckSignature()
@@ -185,7 +211,7 @@ func ParseCertificateRequest(s Signer, csrBytes []byte) (template *x509.Certific
 	}
 
 	template = &x509.Certificate{
-		Subject:            csrv.Subject,
+		Subject:            subject,
 		PublicKeyAlgorithm: csrv.PublicKeyAlgorithm,
 		PublicKey:          csrv.PublicKey,
 		SignatureAlgorithm: s.SigAlgo(),
@@ -193,6 +219,8 @@ func ParseCertificateRequest(s Signer, csrBytes []byte) (template *x509.Certific
 		IPAddresses:        csrv.IPAddresses,
 		EmailAddresses:     csrv.EmailAddresses,
 		URIs:               csrv.URIs,
+		Extensions:         csrv.Extensions,
+		ExtraExtensions:    []pkix.Extension{},
 	}
 
 	for _, val := range csrv.Extensions {
@@ -212,6 +240,11 @@ func ParseCertificateRequest(s Signer, csrBytes []byte) (template *x509.Certific
 			template.IsCA = constraints.IsCA
 			template.MaxPathLen = constraints.MaxPathLen
 			template.MaxPathLenZero = template.MaxPathLen == 0
+		} else {
+			// If the profile has 'copy_extensions' to true then lets add it
+			if p.CopyExtensions {
+				template.ExtraExtensions = append(template.ExtraExtensions, val)
+			}
 		}
 	}
 
