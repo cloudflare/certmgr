@@ -134,7 +134,7 @@ An example spec that writes both a CA and certificate key pair defined in JSON:
         "auth_key": "012345678012345678",
         "label": "www_ca",
         "profile": "three-month",
-        root_ca: "/etc/cfssl/api_server_ca.pem"
+        "root_ca": "/etc/cfssl/api_server_ca.pem"
     }
 }
 ```
@@ -154,7 +154,7 @@ And this is an example that writes just the CA to disk:
             "owner": "www-data",
             "group": "www-data"
         },
-        root_ca: "/etc/cfssl/api_server_ca.pem"
+        "root_ca": "/etc/cfssl/api_server_ca.pem"
     }
 }
 ```
