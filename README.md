@@ -46,7 +46,7 @@ An example `certmgr.yaml` file is:
 
 ```
 dir: /etc/certmgr.d
-default_remote: ca.example.net:8888
+default_remote: https://ca.example.net:8888
 svcmgr: systemd
 before: 72h
 interval: 30m
@@ -130,7 +130,7 @@ An example spec that writes both a CA and certificate key pair defined in JSON:
         "group": "www-data"
     },
     "authority": {
-        "remote": "ca.example.net:8888",
+        "remote": "https://ca.example.net:8888",
         "auth_key": "012345678012345678",
         "label": "www_ca",
         "profile": "three-month",
@@ -145,7 +145,7 @@ And this is an example that writes just the CA to disk:
     "service": "nginx",
     "action": "restart",
     "authority": {
-        "remote": "ca.example.net:8888",
+        "remote": "https://ca.example.net:8888",
         "auth_key": "012345678012345678",
         "label": "www_ca",
         "profile": "three-month",
