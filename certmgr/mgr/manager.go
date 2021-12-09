@@ -10,7 +10,7 @@ import (
 
 	"github.com/cloudflare/certmgr/cert"
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -30,11 +30,11 @@ type MgrSpecOptions struct {
 // to new location names for compatibility.
 func (m *MgrSpecOptions) FinalizeSpecOptionParsing() {
 	if m.OldServiceManagerField != "" {
-		log.Warning("certmgr manager configuration field `service_manager` is deprecated and will be removed; please use `svcmgr` instead")
+		log.Warn().Msg("certmgr manager configuration field `service_manager` is deprecated and will be removed; please use `svcmgr` instead")
 		m.ServiceManagerName = m.OldServiceManagerField
 	}
 	if m.OldRemoteField != "" {
-		log.Warning("certmgr manager configuration field `default_remote` is deprecated and will be removed; please use `remote` instead")
+		log.Warn().Msg("certmgr manager configuration field `default_remote` is deprecated and will be removed; please use `remote` instead")
 		m.Remote = m.OldRemoteField
 	}
 	m.ParsableSpecOptions.FinalizeSpecOptionParsing()
@@ -79,7 +79,7 @@ func (m *Manager) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // JSON file, it will attempt to load it as a JSON file; otherwise, it
 // assumes that it is a YAML file.
 func NewFromConfig(configPath string) (*Manager, error) {
-	log.Info("manager: loading from configuration file")
+	log.Info().Str("config", configPath).Msg("loading configuration")
 	in, err := ioutil.ReadFile(configPath)
 	if err != nil {
 		return nil, err
@@ -120,14 +120,15 @@ var validExtensions = map[string]bool{
 }
 
 func (m *Manager) loadSpec(path string) (*cert.Spec, error) {
-	log.Infof("manager: loading spec from %s", path)
+	log.Info().Str("spec", path).Msg("loading spec")
 	path = filepath.Clean(path)
 	spec, err := ReadSpecFile(path, &(m.MgrSpecOptions.ParsableSpecOptions))
-	if err == nil {
-		log.Debugf("manager: successfully loaded spec from %s with begin %v", path, spec.Before)
-	} else {
-		log.Errorf("managed: failed loading spec from %s: %s", path, err)
+	if err != nil {
+		log.Error().Err(err).Str("spec", path).Msg("failed to load spec")
+		return nil, err
 	}
+	log.Debug().Dur("before", spec.Before).Str("spec", path).Msg("successfully loaded spec")
+
 	return spec, err
 }
 
@@ -162,7 +163,7 @@ func (m *Manager) Load() error {
 
 	m.Certs = make([]*cert.Spec, 0)
 
-	log.Info("manager: loading certificates from ", m.Dir)
+	log.Info().Str("config_dir", m.Dir).Msg("loading certificates")
 	walker := func(path string, info os.FileInfo, err error) error {
 		if info == nil {
 			return err
@@ -182,7 +183,7 @@ func (m *Manager) Load() error {
 
 		spec, err := m.loadSpec(path)
 		if err != nil {
-			log.Errorf("stopping directory scan due to %s", err)
+			log.Error().Err(err).Msg("stopping directory scan")
 			return err
 		}
 
@@ -201,11 +202,11 @@ func (m *Manager) Load() error {
 	}
 
 	if len(m.Certs) == 0 {
-		log.Warning("manager: no certificate specs found")
+		log.Warn().Msg("no certificate specs found")
 	}
 
 	m.isLoaded = true
-	log.Infof("manager: watching %d certificates", len(m.Certs))
+	log.Info().Int("spec_count", len(m.Certs)).Msg("watching certificates")
 	return nil
 }
 

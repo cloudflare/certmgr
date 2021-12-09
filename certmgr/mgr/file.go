@@ -19,7 +19,7 @@ import (
 	"github.com/cloudflare/certmgr/cert/storage/util"
 	"github.com/cloudflare/cfssl/config"
 	"github.com/cloudflare/cfssl/csr"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 //validExtUsage extracts the valid values from cfssl's ExtKeyUsage map, which we print when someone specifies an invalid value
@@ -74,7 +74,7 @@ func (pa *ParsableAuthority) loadFromDiskIfNeeded() error {
 	if pa.AuthKeyFile == "" {
 		return nil
 	}
-	log.Debugf("loading auth_key_file %v", pa.AuthKeyFile)
+	log.Debug().Str("auth_key", pa.AuthKeyFile).Msg("loading auth_key_file")
 	content, err := ioutil.ReadFile(pa.AuthKeyFile)
 	if err != nil {
 		return fmt.Errorf("failed reading auth_key_file %v: %v", pa.AuthKeyFile, err)
@@ -190,6 +190,8 @@ func (spec *ParsableSpec) loadFromPath(path string) error {
 
 // ReadSpecFile reads a spec from a JSON configuration util.
 func ReadSpecFile(path string, defaults *ParsableSpecOptions) (*cert.Spec, error) {
+	// Set up contextual logger to avoid passing spec to every call
+	log := log.With().Str("spec", path).Logger()
 	var spec = &ParsableSpec{
 		Request: csr.New(),
 	}
@@ -226,7 +228,7 @@ func ReadSpecFile(path string, defaults *ParsableSpecOptions) (*cert.Spec, error
 			spec.KeyUsages = append(spec.KeyUsages, keyUsage)
 		}
 	} else { // Key usage not defined, default to server auth as that is both most common and was our previous behavior.
-		log.Warnf("spec %s does not specify key usage, defaulting to \"server auth\"", path)
+		log.Warn().Msg("spec does not specify key_usage, defaulting to 'server auth'")
 		spec.KeyUsages = []x509.ExtKeyUsage{config.ExtKeyUsage["server auth"]}
 	}
 
@@ -242,29 +244,29 @@ func ReadSpecFile(path string, defaults *ParsableSpecOptions) (*cert.Spec, error
 		if spec.CA != nil {
 			return nil, errors.New("both deprecated authority:file field was specified and 'ca'.  Only one is tolerated (use 'ca')")
 		}
-		log.Warnf("spec %s has 'file' as part of authority field; this is deprecated in favor of a top level 'ca' field.", path)
+		log.Warn().Msg("spec has 'file' as part of authority field; this is deprecated in favor of a top level 'ca' field")
 		spec.CA = spec.Authority.CA
 	}
 
-	fb, err := storage.NewFileBackend(spec.CA, spec.Cert, spec.Key)
+	fb, err := storage.NewFileBackend(path, spec.CA, spec.Cert, spec.Key)
 	if err != nil {
 		return nil, err
 	}
 
 	var pkiStorage storage.PKIStorage
 	if spec.ServiceManagerName == "" || spec.ServiceManagerName == "dummy" {
-		log.Debugf("no notification backend configured for %s", path)
+		log.Debug().Msg("spec has no notification backend configured")
 		pkiStorage = fb
 	} else {
 		if spec.ServiceManagerName == "command" {
-			log.Debugf("creating command notifier for %s", path)
+			log.Debug().Msg("creating command notifier")
 			if spec.Service != "" {
 				return nil, fmt.Errorf("svcmgr backend of 'command' doesn't support the 'service' field; got %s", spec.Service)
 			}
 			pkiStorage, err = storage.NewFileCommandNotifier(fb, spec.Action)
 			err = errors.WithMessage(err, "while instantiating command notifier")
 		} else {
-			log.Debugf("creating service notifier for %s", path)
+			log.Debug().Str("spec", path).Msg("creating service notifier")
 			// assume it's sysv/systemd
 			pkiStorage, err = storage.NewFileServiceNotifier(
 				fb,
@@ -286,8 +288,8 @@ func ReadSpecFile(path string, defaults *ParsableSpecOptions) (*cert.Spec, error
 	if err != nil {
 		return nil, err
 	}
-
 	s.WakeCallbacks = append(s.WakeCallbacks, func() {
+		// Add a hook to detect if the spec has changed since we first loaded it
 		warnIfHasChangedOnDisk(path, specStat.ModTime())
 	})
 	return s, nil
@@ -295,16 +297,17 @@ func ReadSpecFile(path string, defaults *ParsableSpecOptions) (*cert.Spec, error
 
 // warnIfHasChangedOnDisk logs warnings if the spec in memory doesn't reflect what's on disk.
 func warnIfHasChangedOnDisk(path string, loadTime time.Time) {
+	log := log.With().Str("spec", path).Logger()
 	specStat, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Warningf("spec %s was removed from on disk", path)
+			log.Warn().Msg("spec was removed from disk but still exists in memory")
 		} else {
-			log.Warningf("spec %s failed to be checked on disk: %s", path, err)
+			log.Warn().Err(err).Msg("spec failed to be checked on disk")
 		}
 	} else if specStat.ModTime().After(loadTime) {
-		log.Warningf("spec %s has changed on disk", path)
+		log.Warn().Msg("spec has changed on disk")
 	} else {
-		log.Debugf("spec %s hasn't changed on disk", path)
+		log.Debug().Msg("spec hasn't changed on disk")
 	}
 }

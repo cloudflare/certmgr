@@ -18,19 +18,17 @@ import (
 	"github.com/cloudflare/certmgr/cert/storage"
 	"github.com/cloudflare/cfssl/csr"
 	"github.com/cloudflare/cfssl/transport"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // These are defaults used for limiting the backoff logic for cfssl transport
 const backoffMaxDelay = time.Minute * 2
 
-//
-// DefaultInterval is used if no duration is provided for a
-// Manager. This defaults to one hour.
+// DefaultInterval is used if no duration is provided for a Manager
 const DefaultInterval = time.Hour
 
-// DefaultBefore is used if no duration is provided for a
-// Manager. This defaults to 72 hours.
+// DefaultBefore is used if no duration is provided for a Manager
 const DefaultBefore = time.Hour * 72
 
 // SpecOptions is a struct used for holding defaults used for instantiating a spec.
@@ -92,6 +90,8 @@ type Spec struct {
 		CA   time.Time
 		Cert time.Time
 	}
+	// log contains a contextual logger with relevant fields defined at creation time
+	log zerolog.Logger
 }
 
 // NewSpec creates a Spec.
@@ -100,6 +100,9 @@ func NewSpec(name string, options *SpecOptions, authority *Authority, request *c
 	if err != nil {
 		return nil, err
 	}
+	// create contextual logger. We don't need any fields from our caller, so just base this off of the global logger
+	// in the future, we could conditionally include more info here when logging in debug mode.
+	logger := log.With().Str("spec", name).Logger()
 
 	return &Spec{
 		Name:        name,
@@ -108,6 +111,7 @@ func NewSpec(name string, options *SpecOptions, authority *Authority, request *c
 		Request:     request,
 		Storage:     storage,
 		tr:          tr,
+		log:         logger,
 	}, nil
 }
 
@@ -223,10 +227,10 @@ func (spec *Spec) UpdateIfNeeded() error {
 	}
 	err = spec.validateStoredPKI(ca)
 	if err == nil {
-		log.Debugf("spec %s is still valid", spec)
+		spec.log.Debug().Msg("spec is still valid")
 		return nil
 	}
-	log.Infof("spec %s is needs refresh: %s", spec, err)
+	spec.log.Debug().Msg("spec needs to be refreshed")
 	return spec.doRefresh(ca)
 }
 
@@ -236,24 +240,21 @@ func (spec *Spec) ForceUpdate() error {
 	if err != nil {
 		return err
 	}
-	log.Infof("refresh was forced for %s", spec)
 	return spec.doRefresh(ca)
 }
 
 func (spec *Spec) doRefresh(currentCA *x509.Certificate) error {
 	var keyPair *tls.Certificate
 	var err error
-
-	log.Debugf("performing refresh for %s", spec)
-
+	spec.log.Debug().Msg("performing refresh")
 	if spec.Storage.WantsKeyPair() {
-		log.Debugf("spec %s: uses keyPairs, fetching", spec)
+		spec.log.Debug().Msg("spec uses keyPairs, fetching")
 		keyPair, err = spec.fetchNewKeyPair()
 		if err != nil {
 			return errors.WithMessage(err, "while fetching new keyPair")
 		}
 	}
-	log.Debugf("spec %s: storing content", spec)
+	spec.log.Debug().Msg("storing content")
 	return errors.WithMessage(
 		spec.writePKIToStorage(currentCA, keyPair),
 		"storing PKI",
@@ -298,10 +299,10 @@ func (spec *Spec) fetchNewKeyPair() (*tls.Certificate, error) {
 			if err != nil {
 				SpecRequestFailureCount.WithLabelValues(spec.Name).Inc()
 				if isAuthError(err) {
-					log.Errorf("spec %s: authentication error. Giving up without retries", spec)
+					spec.log.Error().Err(err).Msg("giving up without retrying")
 					return backoff.Permanent(errors.WithMessage(err, "error from gatewayca"))
 				}
-				log.Warningf("spec %s: failed fetching new cert: %s", spec, err)
+				spec.log.Warn().Err(err).Msg("Failed fetching new cert")
 			}
 			return nil
 		},
@@ -314,7 +315,7 @@ func (spec *Spec) fetchNewKeyPair() (*tls.Certificate, error) {
 
 	pair, err := spec.tr.Provider.X509KeyPair()
 	if err != nil {
-		log.Errorf("spec %s: likely internal error, fetched new cert/key but couldn't create a keypair from it: %s", spec, err)
+		spec.log.Error().Err(err).Msg("fetched new cert/key but couldn't create a keypair from it")
 	}
 	return &pair, err
 }
@@ -339,22 +340,21 @@ func (spec *Spec) Run(ctx context.Context) {
 
 	err := spec.UpdateIfNeeded()
 	if err != nil {
-		log.Errorf("spec %s: continuing despite failed initial validation due to %s", spec, err)
+		spec.log.Error().Err(err).Msg("initial validation failed, continuing anyways")
 	}
 
 	rng := rand.New(rand.NewSource(time.Now().UTC().UnixNano()))
 	sleepPeriod := spec.Interval
 	if spec.InitialSplay != 0 {
 		sleepPeriod = time.Duration(rng.Float64() * float64(spec.InitialSplay.Nanoseconds()))
-		log.Infof("spec %s: initial splay will be used.", spec)
 	}
 	for {
-		log.Infof("spec %s: Next check will be in %s", spec, sleepPeriod)
+		spec.log.Info().Dur("delay_ns", sleepPeriod).Msg("scheduling next check")
 		SpecNextWake.WithLabelValues(spec.Name).Set(float64(time.Now().Add(sleepPeriod).Unix()))
 
 		select {
 		case <-time.After(sleepPeriod):
-			log.Debugf("spec %s: woke, starting enforcement", spec)
+			log.Debug().Msg("spec timer fired, revalidating")
 
 			// fire wake notifications so things like "spec no longer exists on disk" are checked
 			// and logged if relevant.
@@ -364,7 +364,7 @@ func (spec *Spec) Run(ctx context.Context) {
 
 			err := spec.UpdateIfNeeded()
 			if err != nil {
-				log.Errorf("failed processing %s due to %s", spec, err)
+				log.Error().Err(err).Msg("failed processing")
 			}
 			sleepPeriod = spec.Interval
 			if spec.IntervalSplay != 0 {
@@ -373,7 +373,7 @@ func (spec *Spec) Run(ctx context.Context) {
 				sleepPeriod = time.Duration(int64(i))
 			}
 		case <-ctx.Done():
-			log.Debugf("spec %s: stopping monitoring due to %s", spec, ctx.Err())
+			log.Debug().Err(ctx.Err()).Msg("stopped monitoring due to error")
 			return
 		}
 	}

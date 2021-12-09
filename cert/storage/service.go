@@ -8,7 +8,7 @@ import (
 	"syscall"
 
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 // FileServiceOptions is for passing configurables for instantiating a service manager.
@@ -82,26 +82,27 @@ func (f *FileServiceNotifier) invoke(command string) error {
 
 // Store persists the PKI content, and triggers actions if there are no errors.
 func (f *FileServiceNotifier) Store(ca *x509.Certificate, keyPair *tls.Certificate) error {
+	log := log.With().Str("service", f.Service).Logger()
 	// store the content
 	err := errors.WithMessage(
 		f.FileBackend.Store(ca, keyPair),
 		"while persisting PKI",
 	)
 	if err != nil {
-		log.Debugf("file service notifier- got error from storage, actions won't be ran")
+		log.Debug().Msg("file service notifier- got error from storage, actions won't be ran")
 		return err
 	}
 
 	// next trigger the relevant action.
 	if f.CheckTargetStatus && f.statusCommand != "" {
-		log.Debugf("backend service '%s' supports status, invoking", f.Service)
+		log.Debug().Msg("backend service supports status, invoking")
 		err := f.invoke(f.statusCommand)
-		log.Debugf("backend service '%s' status result: %s", f.Service, err)
+		log.Debug().Err(err).Msg("backend service status error")
 		if err != nil {
 			// yes, this is the way you have to do this.  It sucks.
 			if exitErr, ok := errors.Cause(err).(*exec.ExitError); ok {
 				// non zero exit code; log it.
-				log.Infof("status of service %v was non-zero: %v, skipping action", f.Service, exitErr.Sys().(syscall.WaitStatus).ExitStatus())
+				log.Info().Int("status_code", exitErr.Sys().(syscall.WaitStatus).ExitStatus()).Msg("backend service status non-zero; skipping action")
 				return nil
 			}
 			return errors.WithMessagef(err, "status check for service '%s' failed", f.Service)
@@ -109,7 +110,7 @@ func (f *FileServiceNotifier) Store(ca *x509.Certificate, keyPair *tls.Certifica
 		// no err means zero exit code.  Proceed.
 	}
 
-	log.Infof("%ving service %v", f.Action, f.Service)
+	log.Info().Str("action", f.Action).Msg("actioning service")
 
 	return errors.WithMessagef(
 		f.invoke(f.Action),

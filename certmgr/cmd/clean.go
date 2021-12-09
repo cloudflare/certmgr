@@ -3,32 +3,32 @@ package cmd
 import (
 	"os"
 
-	"github.com/cloudflare/cfssl/log"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
 func clean(cmd *cobra.Command, args []string) {
 	mgr, err := newManager()
 	if err != nil {
-		log.Fatalf("Failed: %s", err)
+		log.Fatal().Err(err).Msg("failed to create manager")
 	}
 
 	err = mgr.Load()
 	if err != nil {
-		log.Fatalf("failed: %s", err)
+		log.Fatal().Err(err).Msg("failed to load specs")
 	}
 
 	var failed bool
 	for _, cert := range mgr.Certs {
 		if err := cert.Storage.Wipe(); err != nil {
-			log.Errorf("failed to clean spec %s: %s", cert, err)
+			log.Error().Str("spec", cert.Name).Err(err).Msg("failed to clean spec")
 		} else {
-			log.Infof("successfully cleaned %s", cert)
+			log.Info().Str("spec", cert.Name).Msg("successfully cleaned spec")
 		}
 	}
 
 	if failed {
-		log.Warningf("errors were encountered cleaning the certificates and private keys")
+		log.Warn().Msg("errors were encountered cleaning the certificates and private keys")
 		os.Exit(1)
 	}
 }
