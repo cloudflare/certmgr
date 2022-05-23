@@ -6,6 +6,7 @@ import (
 	"github.com/cloudflare/certmgr/cert/storage"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var enableActions = false
@@ -21,6 +22,9 @@ TLS key pairs they identify exist, are valid, and that they are up-to-date.`,
 }
 
 func ensure(cmd *cobra.Command, args []string) {
+	if err := viper.ReadInConfig(); err != nil {
+		log.Fatal(err)
+	}
 	mgr, err := newManager()
 	if err != nil {
 		log.Fatalf("failed creating manager", err)
