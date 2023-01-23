@@ -35,7 +35,7 @@ var validExtUsage = func() []string {
 // ParsableAuthority is an authority struct that can load the Authkey from content on disk.  This is used internally
 // by Authority for unmarshal- this shouldn't be used for anything but on disk certmgr spec's.
 type ParsableAuthority struct {
-	cert.Authority
+	cert.Authority `yaml:",inline"`
 
 	// Name is an unused field; it was added in v1.4.0 to support loading a full Authority from certmgr config
 	// but was never completed.
@@ -64,7 +64,8 @@ func (pa *ParsableAuthority) UnmarshalJSON(data []byte) error {
 // UnmarshalYAML unmarshal's a YAML representation of Authority object including supporting loading the authkey from
 // a file on disk (thus do not unmarshall untrusted definitions).
 func (pa *ParsableAuthority) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	if err := unmarshal(pa); err != nil {
+	type alias ParsableAuthority
+	if err := unmarshal((*alias)(pa)); err != nil {
 		return err
 	}
 	return pa.loadFromDiskIfNeeded()
@@ -139,7 +140,7 @@ func (p *ParsableSpecOptions) FinalizeSpecOptionParsing() {
 // A ParsableSpec is an intermediate struct representing a certmgr spec
 // on disk; this is used for parsing and converted into a Spec
 type ParsableSpec struct {
-	ParsableSpecOptions
+	ParsableSpecOptions `yaml:",inline"`
 
 	// The service is the service that uses this certificate. If
 	// this field is not empty, the action below will be applied

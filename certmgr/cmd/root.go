@@ -54,6 +54,9 @@ func createManager() (*mgr.Manager, error) {
 	return mgr, err
 }
 func root(cmd *cobra.Command, args []string) {
+	if err := viper.ReadInConfig(); err != nil {
+		log.Fatal(err)
+	}
 	log.Infof("starting certmgr version %s", currentVersion)
 
 	currentMgr, err := createManager()
@@ -168,8 +171,8 @@ func initConfig() {
 	viper.AutomaticEnv() // read in environment variables that match
 
 	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err != nil {
-		log.Fatal(err)
+	if err := viper.ReadInConfig(); err == nil {
+		log.Info("certmgr: loading from config file ", viper.ConfigFileUsed())
 	}
 
 	if err := configureLogging(viper.GetBool("log.json"), viper.GetString("log.level")); err != nil {
