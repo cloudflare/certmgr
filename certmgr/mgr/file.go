@@ -140,7 +140,7 @@ func (p *ParsableSpecOptions) FinalizeSpecOptionParsing() {
 // A ParsableSpec is an intermediate struct representing a certmgr spec
 // on disk; this is used for parsing and converted into a Spec
 type ParsableSpec struct {
-	ParsableSpecOptions
+	ParsableSpecOptions `yaml:",inline"`
 
 	// The service is the service that uses this certificate. If
 	// this field is not empty, the action below will be applied
