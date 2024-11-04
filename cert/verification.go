@@ -10,6 +10,10 @@ import (
 
 // CertificateMatchesHostname checks if the Certificates hosts are the same as the given hosts
 func CertificateMatchesHostname(hosts []string, cert *x509.Certificate) bool {
+	// skip checks for kubernetes system certs with invalid DNS names (i.e. CN=system:kube-proxy)
+        if len(hosts) == 1 && len(cert.DNSNames)+len(cert.IPAddresses) == 0 { 
+		return true 
+	}
 	a := make([]string, len(hosts))
 	for idx := range hosts {
 		// normalize the IPs.
