@@ -20,10 +20,13 @@ func CertificateMatchesHostname(hosts []string, cert *x509.Certificate) bool {
 			a[idx] = ip.String()
 		}
 	}
-	b := make([]string, len(cert.DNSNames), len(cert.DNSNames)+len(cert.IPAddresses))
+	b := make([]string, len(cert.DNSNames), len(cert.DNSNames)+len(cert.IPAddresses)+len(cert.URIs))
 	copy(b, cert.DNSNames)
 	for idx := range cert.IPAddresses {
 		b = append(b, cert.IPAddresses[idx].String())
+	}
+	for idx := range cert.URIs {
+		b = append(b, cert.URIs[idx].String())
 	}
 
 	if len(a) != len(b) {
