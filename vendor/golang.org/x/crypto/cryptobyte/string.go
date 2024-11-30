@@ -24,7 +24,7 @@ type String []byte
 // read advances a String by n bytes and returns them. If less than n bytes
 // remain, it returns nil.
 func (s *String) read(n int) []byte {
-	if len(*s) < n {
+	if len(*s) < n || n < 0 {
 		return nil
 	}
 	v := (*s)[:n]
@@ -81,6 +81,17 @@ func (s *String) ReadUint32(out *uint32) bool {
 	return true
 }
 
+// ReadUint64 decodes a big-endian, 64-bit value into out and advances over it.
+// It reports whether the read was successful.
+func (s *String) ReadUint64(out *uint64) bool {
+	v := s.read(8)
+	if v == nil {
+		return false
+	}
+	*out = uint64(v[0])<<56 | uint64(v[1])<<48 | uint64(v[2])<<40 | uint64(v[3])<<32 | uint64(v[4])<<24 | uint64(v[5])<<16 | uint64(v[6])<<8 | uint64(v[7])
+	return true
+}
+
 func (s *String) readUnsigned(out *uint32, length int) bool {
 	v := s.read(length)
 	if v == nil {
@@ -104,11 +115,6 @@ func (s *String) readLengthPrefixed(lenLen int, outChild *String) bool {
 	for _, b := range lenBytes {
 		length = length << 8
 		length = length | uint32(b)
-	}
-	if int(length) < 0 {
-		// This currently cannot overflow because we read uint24 at most, but check
-		// anyway in case that changes in the future.
-		return false
 	}
 	v := s.read(int(length))
 	if v == nil {
