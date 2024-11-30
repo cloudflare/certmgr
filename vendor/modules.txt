@@ -124,8 +124,8 @@ golang.org/x/crypto/ed25519/internal/edwards25519
 golang.org/x/crypto/ocsp
 golang.org/x/crypto/pkcs12
 golang.org/x/crypto/pkcs12/internal/rc2
-# golang.org/x/sys v0.0.0-20190613124609-5ed2794edfdc
-## explicit; go 1.12
+# golang.org/x/sys v0.1.0
+## explicit; go 1.17
 golang.org/x/sys/unix
 # golang.org/x/text v0.3.2
 ## explicit
