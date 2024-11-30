@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/cloudflare/cfssl/log"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var checkCmd = &cobra.Command{
@@ -17,6 +18,9 @@ checkable during the certificate provisioning process.`,
 }
 
 func check(cmd *cobra.Command, args []string) {
+	if err := viper.ReadInConfig(); err != nil {
+		log.Fatal(err)
+	}
 	mgr, err := newManager()
 	if err != nil {
 		log.Fatalf("Failed: %s", err)
